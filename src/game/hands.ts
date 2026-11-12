@@ -81,21 +81,23 @@ export function countHandTriangles(root: THREE.Object3D): number {
   return Math.round(tris);
 }
 
+export const HAND_TEXTURE_SIZE = 16; // 16x16 low-poly pixel art texture for first-person hands
+
 /**
- * Generates a deterministic 64x64 RGBA procedural skin texture with subtle warm epidermal
+ * Generates a deterministic 16x16 RGBA procedural skin texture with subtle warm epidermal
  * pore, knuckle, and crease micro-variation. Completely opaque (alpha = 255).
  */
 let cachedSkinTex64: THREE.DataTexture | null = null;
 export function getHandSkinTexture64(): THREE.DataTexture {
   if (cachedSkinTex64) return cachedSkinTex64;
-  const size = 64;
+  const size = HAND_TEXTURE_SIZE;
   const data = new Uint8Array(size * size * 4);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const idx = (y * size + x) * 4;
       // Deterministic tactile micro-grain + subtle transverse skin crease lines
       const hash = ((x * 73856093) ^ (y * 19349663)) & 0xff;
-      const crease = Math.sin((y / size) * Math.PI * 16 + Math.sin((x / size) * Math.PI * 4) * 0.6);
+      const crease = Math.sin((y / size) * Math.PI * 6 + Math.sin((x / size) * Math.PI * 2) * 0.5);
       const grain = (hash / 255 - 0.5) * 10 + crease * 4;
       const r = Math.min(255, Math.max(225, Math.round(248 + grain)));
       const g = Math.min(255, Math.max(218, Math.round(243 + grain * 0.9)));
@@ -118,17 +120,17 @@ export function getHandSkinTexture64(): THREE.DataTexture {
 }
 
 /**
- * Generates a deterministic 64x64 RGBA procedural tactical ripstop fabric weave texture for the sleeve & cuff.
+ * Generates a deterministic 16x16 RGBA procedural tactical ripstop fabric weave texture for the sleeve & cuff.
  */
 let cachedSleeveTex64: THREE.DataTexture | null = null;
 export function getSleeveFabricTexture64(): THREE.DataTexture {
   if (cachedSleeveTex64) return cachedSleeveTex64;
-  const size = 64;
+  const size = HAND_TEXTURE_SIZE;
   const data = new Uint8Array(size * size * 4);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const idx = (y * size + x) * 4;
-      const grid = x % 4 === 0 || y % 4 === 0 ? -12 : ((x + y) % 2 === 0 ? 5 : -3);
+      const grid = x % 3 === 0 || y % 3 === 0 ? -12 : ((x + y) % 2 === 0 ? 5 : -3);
       const v = Math.min(255, Math.max(200, 242 + grid));
       data[idx] = v;
       data[idx + 1] = v;
@@ -1329,6 +1331,84 @@ export const POSE_REV_LEFT_CYLINDER_RELOAD: HandPoseState = {
   little: { splayZ: -0.1, baseYawY: -0.06, mcpX: 0.94, pipX: 1.04, dipX: 0.72 },
 };
 
+export const POSE_SG_RIGHT_GRIP: HandPoseState = {
+  // Right hand grips the shotgun angled rear grip (z = +0.11..+0.19, y = -0.02..-0.10)
+  wristPos: [0.038, -0.072, 0.158],
+  wristRot: [-0.26, 0.25, -1.44],
+  palmRot: [0.05, 0.08, -0.08],
+  thumb: {
+    baseX: 0.36,
+    baseY: 0.52,
+    baseZ: 0.32,
+    mcpX: 0.48,
+    ipX: 0.46,
+  },
+  index: {
+    splayZ: -0.15,
+    baseYawY: 0.16,
+    mcpX: 0.36,
+    pipX: 0.6,
+    dipX: 0.44,
+  },
+  middle: {
+    splayZ: 0.0,
+    baseYawY: 0.0,
+    mcpX: 1.18,
+    pipX: 1.3,
+    dipX: 0.88,
+  },
+  ring: {
+    splayZ: 0.05,
+    baseYawY: -0.03,
+    mcpX: 1.25,
+    pipX: 1.36,
+    dipX: 0.92,
+  },
+  little: {
+    splayZ: 0.1,
+    baseYawY: -0.06,
+    mcpX: 1.32,
+    pipX: 1.4,
+    dipX: 0.96,
+  },
+};
+
+export const POSE_SG_LEFT_PUMP_SUPPORT: HandPoseState = {
+  // Left supporting hand wraps firmly around the shotgun ribbed pump fore-end (z = -0.18..-0.34)
+  wristPos: [-0.048, -0.034, -0.215],
+  wristRot: [0.3, -0.46, 2.02],
+  palmRot: [0.08, -0.08, 0.12],
+  thumb: {
+    baseX: 0.28,
+    baseY: -0.48,
+    baseZ: -0.32,
+    mcpX: 0.52,
+    ipX: 0.46,
+  },
+  index: { splayZ: 0.07, baseYawY: 0.04, mcpX: 1.02, pipX: 1.16, dipX: 0.76 },
+  middle: { splayZ: 0.02, baseYawY: 0.0, mcpX: 1.08, pipX: 1.22, dipX: 0.82 },
+  ring: { splayZ: -0.04, baseYawY: -0.03, mcpX: 1.14, pipX: 1.26, dipX: 0.85 },
+  little: { splayZ: -0.09, baseYawY: -0.06, mcpX: 1.2, pipX: 1.3, dipX: 0.88 },
+};
+
+export const POSE_SG_LEFT_SHELL_INSERT: HandPoseState = {
+  // Left hand pinches a 12-gauge shotgun shell and feeds it upward into the lower receiver loading port
+  wristPos: [-0.034, -0.078, -0.018],
+  wristRot: [0.16, -0.22, 1.36],
+  palmRot: [0.05, -0.05, 0.08],
+  thumb: {
+    baseX: 0.46,
+    baseY: -0.58,
+    baseZ: -0.36,
+    mcpX: 0.64,
+    ipX: 0.56,
+  },
+  index: { splayZ: 0.06, baseYawY: 0.04, mcpX: 0.82, pipX: 0.94, dipX: 0.62 },
+  middle: { splayZ: 0.0, baseYawY: 0.0, mcpX: 0.88, pipX: 0.98, dipX: 0.66 },
+  ring: { splayZ: -0.05, baseYawY: -0.03, mcpX: 1.12, pipX: 1.22, dipX: 0.82 },
+  little: { splayZ: -0.1, baseYawY: -0.06, mcpX: 1.18, pipX: 1.28, dipX: 0.86 },
+};
+
 function cloneFingerPose(f: FingerCurlPose): FingerCurlPose {
   return { ...f };
 }
@@ -1433,9 +1513,9 @@ export function createFirstPersonHandsRig(): FirstPersonHandsRig {
 
 /**
  * Updates both hands and all 30 finger joints each frame based on:
- * - Active weapon ('assault_rifle' vs 'revolver')
+ * - Active weapon ('assault_rifle' vs 'revolver' vs 'shotgun')
  * - Trigger press articulation (independent index finger curl across MCP, PIP, DIP)
- * - 5-Phase Assault Rifle reload & Revolver cylinder reload sequences
+ * - 5-Phase Assault Rifle reload, Revolver cylinder reload, and Shotgun individual shell reload + pump action
  * - Idle micro-relaxation, walk/sprint wrist dynamics, and recoil absorption
  */
 export function updateFirstPersonHandsRig(
@@ -1445,10 +1525,15 @@ export function updateFirstPersonHandsRig(
 ): void {
   const clampedDt = clamp(dt, 0.001, 0.05);
   const isAR = anim.activeWeapon === 'assault_rifle';
+  const isSG = anim.activeWeapon === 'shotgun';
 
   // 1. Determine Target Right Hand Pose
   const rightTarget = cloneHandPose(
-    isAR ? POSE_AR_RIGHT_GRIP : POSE_REV_RIGHT_GRIP
+    isAR
+      ? POSE_AR_RIGHT_GRIP
+      : isSG
+      ? POSE_SG_RIGHT_GRIP
+      : POSE_REV_RIGHT_GRIP
   );
 
   // Synchronized Procedural Idle Sway & Organic Breathing:
@@ -1512,12 +1597,12 @@ export function updateFirstPersonHandsRig(
   }
 
   // On revolver shot recovery, right thumb subtly cocks/stabilizes near hammer
-  if (!isAR && anim.triggerPress > 0.05) {
+  if (!isAR && !isSG && anim.triggerPress > 0.05) {
     rightTarget.thumb.mcpX += anim.triggerPress * 0.26;
     rightTarget.thumb.ipX += anim.triggerPress * 0.30;
   }
 
-  // 2. Determine Target Left Support Hand Pose (including multi-phase reloads)
+  // 2. Determine Target Left Support Hand Pose (including multi-phase reloads & shotgun pump)
   let leftTarget: HandPoseState;
 
   if (isAR) {
@@ -1551,6 +1636,38 @@ export function updateFirstPersonHandsRig(
         leftTarget.wristPos[1] -= 0.008 * anim.adsBlend;
         leftTarget.thumb.baseX += 0.12 * anim.adsBlend;
         leftTarget.thumb.mcpX += 0.14 * anim.adsBlend;
+      }
+    }
+  } else if (isSG) {
+    // Shotgun Left Support Hand:
+    // - During reload (`SG_RELOAD_INSERT` / `SG_RELOAD_LOOP`): left hand moves from pump fore-end to lower loading port
+    //   and pushes each individual shell upward into the receiver.
+    // - During normal hold, movement, ADS, and pump action (`SG_PUMP_PRESENTATION`):
+    //   left hand stays firmly attached to the animated pump fore-end (`pumpTravelZ = Math.sin(pumpProgress * Math.PI) * 0.072`).
+    if (anim.phase === 'reloading') {
+      const sp = anim.shellInsertProgress;
+      leftTarget = cloneHandPose(POSE_SG_LEFT_SHELL_INSERT);
+      // Smooth upward shell insertion arc into the lower receiver loading port
+      const insertPush = Math.sin(sp * Math.PI);
+      leftTarget.wristPos[1] += insertPush * 0.044;
+      leftTarget.wristPos[2] -= insertPush * 0.028;
+      leftTarget.wristRot[0] += insertPush * 0.22;
+      leftTarget.thumb.mcpX += insertPush * 0.25;
+      leftTarget.index.mcpX += insertPush * 0.22;
+    } else {
+      leftTarget = cloneHandPose(POSE_SG_LEFT_PUMP_SUPPORT);
+      const pumpStroke = Math.sin((anim.pumpProgress ?? 0) * Math.PI);
+      // Left hand tracks the exact +Z rearward / -Z forward pump travel of the shotgun fore-end
+      leftTarget.wristPos[2] += pumpStroke * 0.072;
+      leftTarget.wristPos[1] -= pumpStroke * 0.004;
+      leftTarget.wristRot[0] += pumpStroke * 0.12;
+      // Tighten finger grip on pump fore-end during pump stroke
+      leftTarget.index.mcpX += pumpStroke * 0.14;
+      leftTarget.middle.mcpX += pumpStroke * 0.14;
+      leftTarget.ring.mcpX += pumpStroke * 0.14;
+      if (anim.adsBlend > 0.01) {
+        leftTarget.wristPos[1] -= 0.007 * anim.adsBlend;
+        leftTarget.thumb.baseX += 0.1 * anim.adsBlend;
       }
     }
   } else {
@@ -1607,9 +1724,104 @@ export function updateFirstPersonHandsRig(
     leftTarget.thumb.mcpX += fingerPulse * 0.7 + leftBrace * 0.8;
   }
 
-  // Snappy interpolation during firing (30), smooth during normal/reload (22 / 16)
+  // Direction 01 — Four Subtle Idle Variations (IdleA, IdleB, IdleC, IdleD):
+  // IdleA: Standard steady breathing
+  // IdleB: Subtle wrist roll & finger relaxation micro-adjustment
+  // IdleC: Support hand micro-shift & thumb flex
+  // IdleD: Slight ready-stance tension check
+  const idleVarWave = Math.sin(anim.idleVariationTimer * 1.65) * adsCalm;
+  if (anim.idleVariation === 'IdleB') {
+    rightTarget.wristRot[2] += idleVarWave * 0.032;
+    rightTarget.little.mcpX -= Math.abs(idleVarWave) * 0.08;
+    rightTarget.ring.mcpX -= Math.abs(idleVarWave) * 0.05;
+  } else if (anim.idleVariation === 'IdleC') {
+    leftTarget.wristPos[2] += idleVarWave * 0.004;
+    leftTarget.thumb.mcpX += idleVarWave * 0.09;
+    leftTarget.wristRot[0] += idleVarWave * 0.025;
+  } else if (anim.idleVariation === 'IdleD') {
+    rightTarget.wristPos[1] += Math.abs(idleVarWave) * 0.0028;
+    leftTarget.wristPos[1] += Math.abs(idleVarWave) * 0.0028;
+    rightTarget.palmRot[0] -= idleVarWave * 0.02;
+  }
+
+  // Direction 03 — Tactical Slide Pose: Canted stabilized hand bracing during slide
+  if (anim.slideBlend > 0.001) {
+    const sb = anim.slideBlend;
+    rightTarget.wristRot[2] -= sb * 0.24;
+    rightTarget.wristPos[1] -= sb * 0.006;
+    leftTarget.wristRot[2] -= sb * 0.18;
+    leftTarget.wristPos[0] += sb * 0.005;
+  }
+
+  // Direction 04 — 5-Stage First-Person Melee Attack (Preparation -> Anticipation -> Strike -> Contact -> Recovery)
+  if (anim.phase === 'melee' || anim.meleeProgress > 0.001) {
+    const mp = anim.meleeProgress;
+    // Tightly clench fingers during melee strike
+    const clench = Math.sin(mp * Math.PI) * 0.25;
+    rightTarget.middle.mcpX += clench;
+    rightTarget.ring.mcpX += clench;
+    rightTarget.little.mcpX += clench;
+    leftTarget.index.mcpX += clench;
+    leftTarget.middle.mcpX += clench;
+
+    if (mp < 0.28) {
+      // Stages 1 & 2: Preparation & Anticipation windup (pull back and cant inward)
+      const wind = mp / 0.28;
+      rightTarget.wristPos[0] += wind * 0.018;
+      rightTarget.wristPos[1] += wind * 0.015;
+      rightTarget.wristPos[2] += wind * 0.028;
+      rightTarget.wristRot[0] += wind * 0.28;
+      rightTarget.wristRot[1] += wind * 0.32;
+      leftTarget.wristPos[2] += wind * 0.022;
+    } else if (mp < 0.58) {
+      // Stages 3 & 4: Fast Forward Strike & Contact Frame
+      const thrust = Math.sin(((mp - 0.28) / 0.3) * Math.PI);
+      rightTarget.wristPos[0] -= thrust * 0.025;
+      rightTarget.wristPos[1] += thrust * 0.012;
+      rightTarget.wristPos[2] -= thrust * 0.055;
+      rightTarget.wristRot[0] -= thrust * 0.36;
+      rightTarget.wristRot[1] -= thrust * 0.38;
+      rightTarget.wristRot[2] -= thrust * 0.28;
+      leftTarget.wristPos[2] -= thrust * 0.042;
+      leftTarget.wristRot[0] -= thrust * 0.25;
+    } else {
+      // Stage 5: Smooth Recovery to combat grip
+      const rec = 1 - (mp - 0.58) / 0.42;
+      rightTarget.wristPos[2] -= rec * 0.015;
+      rightTarget.wristRot[0] -= rec * 0.1;
+    }
+  }
+
+  // Direction 05 — 4-Way Directional Damage Flinch & Single-Trigger Death Lowering
+  if (
+    Math.abs(anim.damageReactX) > 0.0001 ||
+    Math.abs(anim.damageReactY) > 0.0001 ||
+    Math.abs(anim.damageReactRoll) > 0.0001
+  ) {
+    rightTarget.wristPos[0] += anim.damageReactX * 0.35;
+    rightTarget.wristPos[1] += anim.damageReactY * 0.35;
+    rightTarget.wristRot[2] += anim.damageReactRoll * 0.55;
+    leftTarget.wristPos[0] += anim.damageReactX * 0.42;
+    leftTarget.wristPos[1] += anim.damageReactY * 0.42;
+    leftTarget.wristRot[2] += anim.damageReactRoll * 0.65;
+  }
+
+  if (anim.deathDropBlend > 0.001) {
+    const db = anim.deathDropBlend;
+    rightTarget.wristPos[1] -= db * 0.045;
+    rightTarget.wristRot[0] -= db * 0.45;
+    rightTarget.wristRot[2] += db * 0.35;
+    leftTarget.wristPos[1] -= db * 0.055;
+    leftTarget.wristRot[0] -= db * 0.52;
+  }
+
+  // Snappy interpolation during firing/melee (30), smooth during normal/reload (22 / 16)
   const blendSpeed =
-    anim.phase === 'reloading' ? 16 : anim.triggerPress > 0.15 ? 30 : 22;
+    anim.phase === 'reloading'
+      ? 16
+      : anim.phase === 'melee' || anim.triggerPress > 0.15
+      ? 30
+      : 22;
   dampHandPose(handsRig.rightHand.currentPose, rightTarget, blendSpeed, clampedDt);
   dampHandPose(handsRig.leftHand.currentPose, leftTarget, blendSpeed, clampedDt);
 

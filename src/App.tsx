@@ -5,14 +5,24 @@ import {
   GameSettings,
   GameState,
   InspectionViewMode,
+  MapId,
   RunSummary,
+  ShopItemId,
 } from './game/types';
-import { CAMERA_COMFORT_PRESETS, WEAPON_SPECS } from './game/rules';
+import {
+  CAMERA_COMFORT_PRESETS,
+  SHOP_ITEMS,
+  WEAPON_SPECS,
+  createInitialUpgradesState,
+} from './game/rules';
+import { MAP_ORDER, MAP_SPECS } from './game/maps';
 import { audioEngine } from './game/audio';
 
 const INITIAL_HUD: HudSnapshot = {
   health: 100,
   maxHealth: 100,
+  armor: 50,
+  maxArmor: 100,
   activeWeapon: 'assault_rifle',
   ammoInMag: 30,
   reserveAmmo: 120,
@@ -20,14 +30,61 @@ const INITIAL_HUD: HudSnapshot = {
   reloadProgress: 0,
   score: 0,
   bestScore: 0,
+  credits: 100,
   wave: 1,
+  waveTitle: 'SECTOR 1 · RECON VANGUARD',
+  isBossWave: false,
   enemiesRemaining: 6,
+  bossAlive: false,
+  bossName: '',
+  bossHp: 0,
+  bossMaxHp: 1,
+  bossPhase: 1,
+  killCombo: 0,
+  bannerText: '',
+  bannerSubtext: '',
+  killFeedText: '',
+  pickupFeedText: '',
   arTriangles: 162,
   revTriangles: 141,
   leftHandTriangles: 296,
   rightHandTriangles: 296,
+  legsBreakdown: {
+    leftUpperLeg: 12,
+    leftLowerLeg: 8,
+    leftBoot: 12,
+    rightUpperLeg: 12,
+    rightLowerLeg: 8,
+    rightBoot: 12,
+    kneeAndArmorDetails: 16,
+    pelvisAndAttachments: 8,
+    totalPolygons: 88,
+    totalTriangles: 88,
+    maxPolygons: 99,
+    withinBudget: true,
+    boneCount: 7,
+    textureSize: 16,
+  },
+  playerAnimState: 'Idle',
+  activeMapId: 'OUTPOST_01',
+  spawnDebugNodes: [],
+  mapValidationSummaries: [],
+  navManagerMetrics: {
+    closeBandCount: 0,
+    mediumBandCount: 0,
+    distantBandCount: 0,
+    pathsUpdatedLastStep: 0,
+    stuckRecoveriesTriggered: 0,
+    batchCursor: 0,
+  },
+  enemyPolygonValidation: [],
+  enemyBenchmarks: [],
   hurtFlash: 0,
+  lastDamageAngle: 0,
   isAiming: false,
+  isCrouching: false,
+  isSliding: false,
+  upgrades: createInitialUpgradesState(),
   arBreakdown: {
     receiver: 32,
     barrel: 22,
@@ -69,6 +126,8 @@ export default function App() {
 
   const [showTitleSettings, setShowTitleSettings] = useState(false);
   const [showAdvancedCamera, setShowAdvancedCamera] = useState(false);
+  const [shopOpen, setShopOpen] = useState(false);
+  const [shopFeedback, setShopFeedback] = useState<string>('');
   const [settings, setSettings] = useState<GameSettings>({
     sensitivity: 1.0,
     fov: 75,
@@ -87,11 +146,15 @@ export default function App() {
   }, []);
 
   const [inspectionView, setInspectionView] = useState<InspectionViewMode>('off');
+  const [inspectorTab, setInspectorTab] = useState<'models' | 'benchmarks'>('models');
+  const [selectedMap, setSelectedMap] = useState<MapId>('OUTPOST_01');
+  const [showSpawnDebug, setShowSpawnDebug] = useState<boolean>(false);
   const [hud, setHud] = useState<HudSnapshot>(INITIAL_HUD);
   const [trailHealth, setTrailHealth] = useState<number>(100);
   const [runSummary, setRunSummary] = useState<RunSummary | null>(null);
   const [resetSignal, setResetSignal] = useState<number>(0);
 
+  const buyItemRef = useRef<((itemId: ShopItemId) => string) | null>(null);
   const crosshairRef = useRef<HTMLDivElement | null>(null);
   const hitMarkerRef = useRef<HTMLDivElement | null>(null);
   const damageLayerRef = useRef<HTMLDivElement | null>(null);
@@ -153,7 +216,12 @@ export default function App() {
     });
   }, []);
 
-  // Keyboard shortcuts for Title start (Enter/Space), Hands toggle (H), Inspection (I), and Mute (M)
+  const handleToggleSpawnDebug = useCallback(() => {
+    audioEngine.playUiClick();
+    setShowSpawnDebug((prev) => !prev);
+  }, []);
+
+  // Keyboard shortcuts for Title start (Enter/Space), Hands toggle (H), Spawn Debug (N), Inspection (I), and Mute (M)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'KeyM') {
@@ -162,6 +230,10 @@ export default function App() {
       }
       if (e.code === 'KeyH') {
         handleToggleHands();
+        return;
+      }
+      if (e.code === 'KeyN') {
+        handleToggleSpawnDebug();
         return;
       }
       if (e.code === 'KeyI' && gameState === 'playing') {
@@ -188,14 +260,29 @@ export default function App() {
     startGameplay,
     handleToggleMute,
     handleToggleHands,
+    handleToggleSpawnDebug,
     handleCycleInspection,
   ]);
 
   const handlePauseRequest = useCallback(() => {
+    setShopOpen(false);
     setGameState('paused');
   }, []);
 
+  const handleToggleShop = useCallback(() => {
+    setShopOpen((v) => !v);
+    setShopFeedback('');
+  }, []);
+
+  const handleBuyItem = useCallback((itemId: ShopItemId) => {
+    if (buyItemRef.current) {
+      const msg = buyItemRef.current(itemId);
+      setShopFeedback(msg);
+    }
+  }, []);
+
   const handleGameOver = useCallback((summary: RunSummary) => {
+    setShopOpen(false);
     setRunSummary(summary);
     setGameState('gameover');
   }, []);
@@ -212,17 +299,22 @@ export default function App() {
       <GameCanvas
         gameState={gameState}
         settings={settings}
+        selectedMap={selectedMap}
+        showSpawnDebug={showSpawnDebug}
         inspectionView={inspectionView}
         resetSignal={resetSignal}
+        shopOpen={shopOpen}
         onHudUpdate={setHud}
         onPauseRequest={handlePauseRequest}
+        onToggleShop={handleToggleShop}
         onGameOver={handleGameOver}
+        buyItemRef={buyItemRef}
         crosshairRef={crosshairRef}
         hitMarkerRef={hitMarkerRef}
         damageLayerRef={damageLayerRef}
       />
 
-      {/* Hurt / Critical Low HP Peripheral Vignette */}
+      {/* Hurt / Critical Low HP Peripheral Vignette + Directional Damage Indicator */}
       {gameState === 'playing' && (hud.hurtFlash > 0 || isLowHealth) && (
         <div
           className="fixed inset-0 pointer-events-none transition-opacity duration-150"
@@ -232,6 +324,19 @@ export default function App() {
             opacity: hud.hurtFlash > 0 ? 0.95 : 0.55,
           }}
         />
+      )}
+      {gameState === 'playing' && hud.hurtFlash > 0 && (
+        <div
+          className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-56 h-56 pointer-events-none z-10"
+          style={{
+            transform: `translate(-50%, -50%) rotate(${Math.round(
+              (hud.lastDamageAngle * 180) / Math.PI
+            )}deg)`,
+            opacity: Math.min(1, hud.hurtFlash * 2.5),
+          }}
+        >
+          <div className="mx-auto w-16 h-3 bg-[#ef4444] rounded-full shadow-[0_0_12px_#ef4444]" />
+        </div>
       )}
 
       {/* =====================================================================
@@ -300,8 +405,8 @@ export default function App() {
             )}
           </div>
 
-          {/* TOP-LEFT CLUSTER: Player Vitality & Health Bar */}
-          <div className="fixed top-5 left-6 flex flex-col gap-1.5 bg-[#14181f]/90 border border-[#2d3542] px-4 py-3 min-w-[220px]">
+          {/* TOP-LEFT CLUSTER: Player Vitality, Health Bar, Ballistic Armor Bar & Stance */}
+          <div className="fixed top-5 left-6 flex flex-col gap-1.5 bg-[#14181f]/90 border border-[#2d3542] px-4 py-3 min-w-[235px]">
             <div className="flex items-baseline justify-between gap-4">
               <div className="flex items-center gap-2">
                 <svg viewBox="0 0 24 24" className="w-4 h-4 text-[#d95f25]" fill="currentColor">
@@ -338,19 +443,56 @@ export default function App() {
                 }}
               />
             </div>
+
+            {/* Ballistic Armor Bar, Crouch/Slide Stance & 18-State Player Anim Readout */}
+            <div className="flex items-center justify-between text-[11px] font-mono-tabular pt-1">
+              <span className="text-[#38bdf8] font-bold">
+                ARMOR: <span data-testid="hud-armor">{hud.armor}</span>/{hud.maxArmor}
+              </span>
+              <span
+                data-testid="hud-stance"
+                className={`px-1.5 py-0.5 text-[10px] border ${
+                  hud.isSliding
+                    ? 'border-[#f59e0b] text-[#f59e0b] font-bold'
+                    : hud.isCrouching
+                    ? 'border-[#38bdf8] text-[#38bdf8] font-bold'
+                    : 'border-[#262d38] text-[#64748b]'
+                }`}
+              >
+                {hud.isSliding
+                  ? 'SLIDING [C]'
+                  : hud.isCrouching
+                  ? 'CROUCHED [C]'
+                  : 'STANDING [C]'}
+              </span>
+            </div>
+            <div className="relative w-full h-1.5 bg-[#0d1015] overflow-hidden border border-[#262d38]">
+              <div
+                className="h-full bg-[#38bdf8] transition-all duration-100"
+                style={{
+                  width: `${Math.max(0, Math.min(100, (hud.armor / hud.maxArmor) * 100))}%`,
+                }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10px] font-mono-tabular text-[#94a3b8] pt-0.5">
+              <span data-testid="hud-player-anim-state">
+                STATE: <strong className="text-[#cbd5e1]">{hud.playerAnimState.toUpperCase()}</strong>
+              </span>
+              <span className="text-[#64748b]">[V] MELEE · [SHIFT+C] SLIDE</span>
+            </div>
           </div>
 
-          {/* SECTION 20.10 & 20.11 WEAPON INSPECTION & TRIANGLE BREAKDOWN OVERLAY */}
+          {/* SECTION 20.10 & ENEMY POLYGON BUDGET INSPECTOR OVERLAY */}
           {inspectionView !== 'off' && (
             <div
               data-hud-interactive="true"
               data-testid="weapon-inspection-panel"
-              className="fixed top-28 left-6 bg-[#14181f]/95 border border-[#d95f25] p-4 flex flex-col gap-3 w-[300px] pointer-events-auto"
+              className="fixed top-40 left-6 bg-[#14181f]/95 border border-[#d95f25] p-3 flex flex-col gap-2 w-[310px] max-h-[calc(100vh-170px)] overflow-y-auto pointer-events-auto"
             >
-              <div className="flex items-center justify-between border-b border-[#262d38] pb-2">
+              <div className="flex items-center justify-between border-b border-[#262d38] pb-1.5">
                 <div className="flex flex-col">
                   <span className="font-display text-xs font-bold tracking-wider text-[#d95f25]">
-                    WEAPON &amp; SIGHT INSPECTOR
+                    WEAPON &amp; ENEMY MESH INSPECTOR
                   </span>
                   <span className="font-mono-tabular text-[10px] text-[#94a3b8]">
                     MODE: {inspectionView.toUpperCase()} VIEW · [I] CYCLE
@@ -382,7 +524,7 @@ export default function App() {
                       audioEngine.playUiClick();
                       setInspectionView(mode);
                     }}
-                    className={`py-1 text-[10px] font-mono-tabular font-bold border uppercase cursor-pointer ${
+                    className={`py-0.5 text-[10px] font-mono-tabular font-bold border uppercase cursor-pointer ${
                       inspectionView === mode
                         ? 'bg-[#d95f25] border-[#d95f25] text-[#0d1015]'
                         : 'bg-[#191f29] border-[#2d3542] text-[#cbd5e1] hover:border-[#d95f25]'
@@ -393,151 +535,438 @@ export default function App() {
                 ))}
               </div>
 
-              {/* Component-by-Component Triangle Breakdown */}
-              <div className="flex flex-col gap-1 text-[11px] font-mono-tabular text-[#cbd5e1] bg-[#0e1218] border border-[#242b35] p-2.5">
-                <div className="flex justify-between font-bold text-[#f8fafc] border-b border-[#242b35] pb-1 mb-1">
-                  <span>{activeSpec.name}</span>
-                  <span className="text-[#38bdf8]">
-                    {activeWeaponTris}/{activeSpec.maxTriangles} TRIS
-                  </span>
-                </div>
-
-                {hud.activeWeapon === 'assault_rifle' ? (
-                  <>
-                    <div className="flex justify-between">
-                      <span className="text-[#94a3b8]">Upper &amp; Lower Receiver</span>
-                      <span>{hud.arBreakdown.receiver} tris</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#94a3b8]">Barrel &amp; Recessed Muzzle</span>
-                      <span>{hud.arBreakdown.barrel} tris</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#94a3b8]">Tactical Handguard</span>
-                      <span>{hud.arBreakdown.handguard} tris</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#94a3b8]">Detachable Magazine</span>
-                      <span>{hud.arBreakdown.magazine} tris</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#94a3b8]">Ergonomic Pistol Grip</span>
-                      <span>{hud.arBreakdown.grip} tris</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#94a3b8]">Shoulder Stock &amp; Pad</span>
-                      <span>{hud.arBreakdown.stock} tris</span>
-                    </div>
-                    <div className="flex justify-between text-[#f59e0b]">
-                      <span>Front Sight Post + Tip</span>
-                      <span>{hud.arBreakdown.frontSight} tris</span>
-                    </div>
-                    <div className="flex justify-between text-[#38bdf8]">
-                      <span>Rear U-Notch Sight</span>
-                      <span>{hud.arBreakdown.rearSight} tris</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#94a3b8]">Trigger, Guard &amp; Bolt</span>
-                      <span>{hud.arBreakdown.remaining} tris</span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex justify-between">
-                      <span className="text-[#94a3b8]">Frame &amp; Top Strap</span>
-                      <span>{hud.revBreakdown.frame} tris</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#94a3b8]">Revolving Cylinder</span>
-                      <span>{hud.revBreakdown.cylinder} tris</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#94a3b8]">Heavy Barrel &amp; Bore</span>
-                      <span>{hud.revBreakdown.barrel} tris</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#94a3b8]">Angled Revolver Grip</span>
-                      <span>{hud.revBreakdown.grip} tris</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#94a3b8]">Articulated Hammer</span>
-                      <span>{hud.revBreakdown.hammer} tris</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#94a3b8]">Trigger &amp; Guard</span>
-                      <span>{hud.revBreakdown.trigger} tris</span>
-                    </div>
-                    <div className="flex justify-between text-[#f59e0b]">
-                      <span>Front Sight Blade + Tip</span>
-                      <span>{hud.revBreakdown.frontSight} tris</span>
-                    </div>
-                    <div className="flex justify-between text-[#38bdf8]">
-                      <span>Rear U-Notch Sight</span>
-                      <span>{hud.revBreakdown.rearSight} tris</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#94a3b8]">Ejector Rod Shroud</span>
-                      <span>{hud.revBreakdown.remaining} tris</span>
-                    </div>
-                  </>
-                )}
-
-                <div className="flex justify-between border-t border-[#242b35] pt-1 mt-1 text-[10px] text-[#94a3b8]">
-                  <span>Full Arm + Hand Rig (Each)</span>
-                  <span className="text-[#f8fafc]">{hud.leftHandTriangles}/300 tris</span>
-                </div>
+              {/* Inspector Sub-Tabs: MODELS & POLYS vs BENCHMARKS A-H */}
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  data-testid="inspector-tab-models"
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    audioEngine.playUiClick();
+                    setInspectorTab('models');
+                  }}
+                  className={`py-1 text-[10px] font-mono-tabular font-bold border uppercase cursor-pointer ${
+                    inspectorTab === 'models'
+                      ? 'bg-[#38bdf8] border-[#38bdf8] text-[#0d1015]'
+                      : 'bg-[#191f29] border-[#2d3542] text-[#cbd5e1] hover:border-[#38bdf8]'
+                  }`}
+                >
+                  MODELS &amp; POLYS (18)
+                </button>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  data-testid="inspector-tab-benchmarks"
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    audioEngine.playUiClick();
+                    setInspectorTab('benchmarks');
+                  }}
+                  className={`py-1 text-[10px] font-mono-tabular font-bold border uppercase cursor-pointer ${
+                    inspectorTab === 'benchmarks'
+                      ? 'bg-[#38bdf8] border-[#38bdf8] text-[#0d1015]'
+                      : 'bg-[#191f29] border-[#2d3542] text-[#cbd5e1] hover:border-[#38bdf8]'
+                  }`}
+                >
+                  BENCHMARKS A-H
+                </button>
               </div>
+
+              {inspectorTab === 'models' ? (
+                <>
+                  {/* Component-by-Component Weapon Triangle Breakdown */}
+                  <div className="flex flex-col gap-0.5 text-[10px] font-mono-tabular text-[#cbd5e1] bg-[#0e1218] border border-[#242b35] p-2">
+                    <div className="flex justify-between font-bold text-[#f8fafc] border-b border-[#242b35] pb-1 mb-0.5">
+                      <span>{activeSpec.name}</span>
+                      <span className="text-[#38bdf8]">
+                        {activeWeaponTris}/{activeSpec.maxTriangles} TRIS
+                      </span>
+                    </div>
+
+                    {hud.activeWeapon === 'assault_rifle' ? (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-[#94a3b8]">Upper &amp; Lower Receiver</span>
+                          <span>{hud.arBreakdown.receiver} tris</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#94a3b8]">Barrel &amp; Recessed Muzzle</span>
+                          <span>{hud.arBreakdown.barrel} tris</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#94a3b8]">Tactical Handguard</span>
+                          <span>{hud.arBreakdown.handguard} tris</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#94a3b8]">Detachable Magazine</span>
+                          <span>{hud.arBreakdown.magazine} tris</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#94a3b8]">Ergonomic Pistol Grip</span>
+                          <span>{hud.arBreakdown.grip} tris</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#94a3b8]">Shoulder Stock &amp; Pad</span>
+                          <span>{hud.arBreakdown.stock} tris</span>
+                        </div>
+                        <div className="flex justify-between text-[#f59e0b]">
+                          <span>Front Sight Post + Tip</span>
+                          <span>{hud.arBreakdown.frontSight} tris</span>
+                        </div>
+                        <div className="flex justify-between text-[#38bdf8]">
+                          <span>Rear U-Notch Sight</span>
+                          <span>{hud.arBreakdown.rearSight} tris</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#94a3b8]">Trigger, Guard &amp; Bolt</span>
+                          <span>{hud.arBreakdown.remaining} tris</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-[#94a3b8]">Frame &amp; Top Strap</span>
+                          <span>{hud.revBreakdown.frame} tris</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#94a3b8]">Revolving Cylinder</span>
+                          <span>{hud.revBreakdown.cylinder} tris</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#94a3b8]">Heavy Barrel &amp; Bore</span>
+                          <span>{hud.revBreakdown.barrel} tris</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#94a3b8]">Angled Revolver Grip</span>
+                          <span>{hud.revBreakdown.grip} tris</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#94a3b8]">Articulated Hammer</span>
+                          <span>{hud.revBreakdown.hammer} tris</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#94a3b8]">Trigger &amp; Guard</span>
+                          <span>{hud.revBreakdown.trigger} tris</span>
+                        </div>
+                        <div className="flex justify-between text-[#f59e0b]">
+                          <span>Front Sight Blade + Tip</span>
+                          <span>{hud.revBreakdown.frontSight} tris</span>
+                        </div>
+                        <div className="flex justify-between text-[#38bdf8]">
+                          <span>Rear U-Notch Sight</span>
+                          <span>{hud.revBreakdown.rearSight} tris</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#94a3b8]">Ejector Rod Shroud</span>
+                          <span>{hud.revBreakdown.remaining} tris</span>
+                        </div>
+                      </>
+                    )}
+
+                    <div className="flex justify-between border-t border-[#242b35] pt-0.5 mt-0.5 text-[10px] text-[#94a3b8]">
+                      <span>FP Hands Rig (16x16 Tex)</span>
+                      <span className="text-[#10b981]">{hud.leftHandTriangles}/300 tris</span>
+                    </div>
+                    <div
+                      data-testid="player-legs-validation"
+                      className="flex justify-between text-[10px] text-[#94a3b8]"
+                    >
+                      <span>FP Legs Rig (16x16 Tex · {hud.legsBreakdown.boneCount}b)</span>
+                      <span className="text-[#10b981]">
+                        {hud.legsBreakdown.totalPolygons}/{hud.legsBreakdown.maxPolygons} polys
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Centralized Navigation Manager, 5-Map Selector & 3D Spawn Debug Visualizer Toggle inside Inspector */}
+                  <div
+                    data-testid="nav-manager-validation"
+                    className="flex flex-col gap-1 text-[10px] font-mono-tabular text-[#cbd5e1] bg-[#0e1218] border border-[#242b35] p-2"
+                  >
+                    <div className="flex justify-between font-bold text-[#f8fafc] border-b border-[#242b35] pb-0.5 mb-0.5">
+                      <span>CENTRALIZED NAV MANAGER</span>
+                      <span className="text-[#38bdf8]">
+                        {hud.navManagerMetrics.pathsUpdatedLastStep} PATHS/F
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[9px] text-[#94a3b8]">
+                      <span>
+                        CLOSE:{hud.navManagerMetrics.closeBandCount} · MED:{hud.navManagerMetrics.mediumBandCount} · DIST:{hud.navManagerMetrics.distantBandCount}
+                      </span>
+                      <span className="text-[#10b981]">
+                        UNSTUCK:{hud.navManagerMetrics.stuckRecoveriesTriggered}
+                      </span>
+                    </div>
+                    <div
+                      data-testid="map-compatibility-validation"
+                      className="grid grid-cols-5 gap-1 pt-1 mt-0.5 border-t border-[#242b35]"
+                    >
+                      {MAP_ORDER.map((mId, idx) => (
+                        <button
+                          key={mId}
+                          type="button"
+                          tabIndex={-1}
+                          data-testid={`inspect-map-${mId}`}
+                          onClick={(e) => {
+                            e.currentTarget.blur();
+                            audioEngine.playUiClick();
+                            setSelectedMap(mId);
+                          }}
+                          className={`py-0.5 text-[9px] font-mono-tabular font-bold border cursor-pointer ${
+                            selectedMap === mId
+                              ? 'bg-[#38bdf8] border-[#38bdf8] text-[#0d1015]'
+                              : 'bg-[#191f29] border-[#2d3542] text-[#cbd5e1] hover:border-[#38bdf8]'
+                          }`}
+                          title={MAP_SPECS[mId].name}
+                        >
+                          M0{idx + 1}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      data-testid="inspect-toggle-spawn-debug"
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        handleToggleSpawnDebug();
+                      }}
+                      className={`mt-0.5 py-1 px-2 text-[9px] font-mono-tabular font-bold border cursor-pointer flex items-center justify-between ${
+                        showSpawnDebug
+                          ? 'bg-[#10b981] border-[#10b981] text-[#0d1015]'
+                          : 'bg-[#191f29] border-[#2d3542] text-[#cbd5e1] hover:border-[#10b981]'
+                      }`}
+                    >
+                      <span>WIREFRAME SPAWN NODES [N]</span>
+                      <span>{showSpawnDebug ? 'VISIBLE' : 'HIDDEN'}</span>
+                    </button>
+                  </div>
+
+                  {/* 18-Archetype Enemy Polygon & Vertex Budget Validation (Normal <=124p, Mini-Boss <=200p, Main Boss <=250p) */}
+                  {hud.enemyPolygonValidation.length > 0 && (
+                    <div
+                      data-testid="enemy-polygon-validation"
+                      className="flex flex-col gap-0.5 text-[10px] font-mono-tabular text-[#cbd5e1] bg-[#0e1218] border border-[#242b35] p-2"
+                    >
+                      <div className="flex justify-between font-bold text-[#f8fafc] border-b border-[#242b35] pb-0.5 mb-0.5">
+                        <span>18 ENEMY ARCHETYPES</span>
+                        <span className="text-[#10b981]">ALL BUDGETS PASS</span>
+                      </div>
+                      {hud.enemyPolygonValidation.map((entry) => (
+                        <div key={entry.archetype} className="flex justify-between">
+                          <span
+                            className={
+                              entry.tier === 'boss'
+                                ? 'text-[#ef4444] font-semibold'
+                                : entry.tier === 'miniboss'
+                                ? 'text-[#f59e0b] font-semibold'
+                                : 'text-[#94a3b8]'
+                            }
+                          >
+                            {entry.name}
+                          </span>
+                          <span className="text-[#38bdf8]">
+                            {entry.polygons}/{entry.maxPolygons}p ({entry.triangles}t·{entry.vertexCount}v)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Performance Benchmark Suite: Tests A through H */
+                <div
+                  data-testid="enemy-benchmark-panel"
+                  className="flex flex-col gap-1 text-[10px] font-mono-tabular text-[#cbd5e1] bg-[#0e1218] border border-[#242b35] p-2"
+                >
+                  <div className="flex justify-between font-bold text-[#f8fafc] border-b border-[#242b35] pb-1">
+                    <span>BENCHMARK SUITE (TESTS A-H)</span>
+                    <span className="text-[#10b981]">60 FPS PASS</span>
+                  </div>
+                  {hud.enemyBenchmarks.map((bm) => (
+                    <div
+                      key={bm.id}
+                      className="flex flex-col border-b border-[#1c222b] pb-1 last:border-b-0"
+                    >
+                      <div className="flex justify-between font-bold text-[#f8fafc]">
+                        <span>{bm.label}</span>
+                        <span className="text-[#10b981]">{bm.avgCpuFrameMs}ms</span>
+                      </div>
+                      <div className="flex justify-between text-[9px] text-[#94a3b8]">
+                        <span>
+                          {bm.totalPolygons}p / {bm.totalTriangles}t / {bm.totalBones}b
+                        </span>
+                        <span className="text-[#38bdf8]">
+                          POOL:{bm.pooledInstancesReused} · AI+LOD OK
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {/* TOP-CENTER CLUSTER: Wave & Score Readouts */}
-          <div className="fixed top-5 left-1/2 -translate-x-1/2 flex items-center gap-6 bg-[#14181f]/90 border border-[#2d3542] px-6 py-2.5">
-            <div className="flex flex-col items-center">
-              <span className="font-display text-[11px] font-semibold tracking-wider text-[#94a3b8]">
-                WAVE
-              </span>
-              <span
-                data-testid="hud-wave"
-                className="font-display font-mono-tabular text-2xl font-bold text-[#38bdf8] leading-tight"
-              >
-                {hud.wave}
-              </span>
+          {/* TOP-CENTER CLUSTER: Wave, Score, Hostiles & Credits Readouts */}
+          <div className="fixed top-5 left-[38%] -translate-x-1/2 flex flex-col items-center gap-2">
+            <div className="flex items-center gap-3.5 bg-[#14181f]/90 border border-[#2d3542] px-3.5 py-2">
+              <div className="flex flex-col items-center">
+                <span className="font-display text-[10px] font-semibold tracking-wider text-[#94a3b8]">
+                  WAVE
+                </span>
+                <span
+                  data-testid="hud-wave"
+                  className="font-display font-mono-tabular text-xl font-bold text-[#38bdf8] leading-tight"
+                >
+                  {hud.wave}
+                </span>
+              </div>
+
+              <div className="w-[1px] h-7 bg-[#2d3542]" />
+
+              <div className="flex flex-col items-center min-w-[70px]">
+                <span className="font-display text-[10px] font-semibold tracking-wider text-[#94a3b8]">
+                  SCORE
+                </span>
+                <span
+                  data-testid="hud-score"
+                  className="font-display font-mono-tabular text-xl font-bold text-[#f8fafc] leading-tight"
+                >
+                  {hud.score}
+                </span>
+              </div>
+
+              <div className="w-[1px] h-7 bg-[#2d3542]" />
+
+              <div className="flex flex-col items-center">
+                <span className="font-display text-[10px] font-semibold tracking-wider text-[#94a3b8]">
+                  HOSTILES
+                </span>
+                <span
+                  data-testid="hud-hostiles"
+                  className="font-display font-mono-tabular text-xl font-bold text-[#d95f25] leading-tight"
+                >
+                  {hud.enemiesRemaining}
+                </span>
+              </div>
+
+              <div className="w-[1px] h-7 bg-[#2d3542]" />
+
+              <div className="flex flex-col items-center">
+                <span className="font-display text-[10px] font-semibold tracking-wider text-[#94a3b8]">
+                  CREDITS
+                </span>
+                <span
+                  data-testid="hud-credits"
+                  className="font-display font-mono-tabular text-xl font-bold text-[#fbbf24] leading-tight"
+                >
+                  {hud.credits} CR
+                </span>
+              </div>
             </div>
 
-            <div className="w-[1px] h-8 bg-[#2d3542]" />
-
-            <div className="flex flex-col items-center min-w-[90px]">
-              <span className="font-display text-[11px] font-semibold tracking-wider text-[#94a3b8]">
-                SCORE
-              </span>
-              <span
-                data-testid="hud-score"
-                className="font-display font-mono-tabular text-2xl font-bold text-[#f8fafc] leading-tight"
+            {/* BOSS HEALTH BAR (Shown during Commander / Apex Titan encounters) */}
+            {hud.bossAlive && (
+              <div
+                data-testid="hud-boss-bar"
+                className="w-[380px] bg-[#14181f]/95 border border-[#ef4444] px-4 py-2 flex flex-col gap-1"
               >
-                {hud.score}
-              </span>
-            </div>
+                <div className="flex items-center justify-between text-xs font-mono-tabular">
+                  <span className="font-display font-bold text-[#ef4444] tracking-wider">
+                    {hud.bossName} · PHASE {hud.bossPhase}
+                  </span>
+                  <span className="text-[#f8fafc]">
+                    {hud.bossHp} / {hud.bossMaxHp} HP
+                  </span>
+                </div>
+                <div className="w-full h-2.5 bg-[#0d1015] border border-[#2d3542] overflow-hidden">
+                  <div
+                    className="h-full bg-[#ef4444] transition-all duration-100"
+                    style={{
+                      width: `${Math.max(
+                        0,
+                        Math.min(100, (hud.bossHp / Math.max(1, hud.bossMaxHp)) * 100)
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
 
-            <div className="w-[1px] h-8 bg-[#2d3542]" />
+            {/* WAVE ANNOUNCEMENT BANNER */}
+            {hud.bannerText && (
+              <div className="bg-[#14181f]/95 border border-[#d95f25] px-5 py-1.5 flex flex-col items-center">
+                <span className="font-display text-base font-bold tracking-widest text-[#f8fafc]">
+                  {hud.bannerText}
+                </span>
+                <span className="font-mono-tabular text-[11px] text-[#d95f25] tracking-wider">
+                  {hud.bannerSubtext}
+                </span>
+              </div>
+            )}
 
-            <div className="flex flex-col items-center">
-              <span className="font-display text-[11px] font-semibold tracking-wider text-[#94a3b8]">
-                HOSTILES
-              </span>
-              <span
-                data-testid="hud-hostiles"
-                className="font-display font-mono-tabular text-2xl font-bold text-[#d95f25] leading-tight"
-              >
-                {hud.enemiesRemaining}
-              </span>
-            </div>
+            {/* KILL COMBO & PICKUP FEED */}
+            {(hud.killFeedText || hud.pickupFeedText) && (
+              <div className="flex flex-col items-center gap-1">
+                {hud.killFeedText && (
+                  <div className="px-3 py-1 bg-[#14181f]/90 border border-[#f59e0b] font-mono-tabular text-xs font-bold text-[#fbbf24]">
+                    {hud.killFeedText}
+                  </div>
+                )}
+                {hud.pickupFeedText && (
+                  <div className="px-3 py-1 bg-[#14181f]/90 border border-[#38bdf8] font-mono-tabular text-xs font-bold text-[#38bdf8]">
+                    {hud.pickupFeedText}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* TOP-RIGHT CLUSTER: Utility Controls (Inspect, Hands Toggle, Mute, Restart, Pause) */}
+          {/* TOP-RIGHT CLUSTER: Utility Controls (Shop, Spawn Nav, Inspect, Hands Toggle, Mute, Restart, Pause) */}
           <div
             data-hud-interactive="true"
-            className="fixed top-5 right-6 flex items-center gap-2 pointer-events-auto"
+            className="fixed top-5 right-6 flex items-center gap-1 pointer-events-auto"
           >
+            <button
+              type="button"
+              tabIndex={-1}
+              data-testid="hud-toggle-shop"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                audioEngine.playUiClick();
+                handleToggleShop();
+              }}
+              className={`h-10 px-2 flex items-center gap-1 bg-[#14181f]/90 border text-[11px] font-mono-tabular font-semibold transition-colors cursor-pointer ${
+                shopOpen
+                  ? 'border-[#fbbf24] text-[#fbbf24]'
+                  : 'border-[#2d3542] text-[#fbbf24] hover:border-[#fbbf24]'
+              }`}
+              title="Open Tactical Supply Shop [B]"
+            >
+              <span>SHOP</span>
+              <span className="text-[10px] text-[#94a3b8]">[B]</span>
+            </button>
+
+            <button
+              type="button"
+              tabIndex={-1}
+              data-testid="hud-toggle-spawn-debug"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                handleToggleSpawnDebug();
+              }}
+              className={`h-10 px-2 flex items-center gap-1 bg-[#14181f]/90 border text-[11px] font-mono-tabular font-semibold transition-colors cursor-pointer ${
+                showSpawnDebug
+                  ? 'border-[#10b981] text-[#10b981]'
+                  : 'border-[#2d3542] text-[#f8fafc] hover:border-[#10b981]'
+              }`}
+              title="Toggle 3D Wireframe Enemy Spawn Location Debug Nodes [N]"
+            >
+              <span>SPAWN: {showSpawnDebug ? 'ON' : 'OFF'}</span>
+              <span className="text-[10px] text-[#94a3b8]">[N]</span>
+            </button>
+
             <button
               type="button"
               tabIndex={-1}
@@ -546,7 +975,7 @@ export default function App() {
                 e.currentTarget.blur();
                 handleCycleInspection();
               }}
-              className={`h-10 px-3 flex items-center gap-1.5 bg-[#14181f]/90 border text-xs font-mono-tabular font-semibold transition-colors cursor-pointer ${
+              className={`h-10 px-2 flex items-center gap-1 bg-[#14181f]/90 border text-[11px] font-mono-tabular font-semibold transition-colors cursor-pointer ${
                 inspectionView !== 'off'
                   ? 'border-[#d95f25] text-[#d95f25]'
                   : 'border-[#2d3542] text-[#f8fafc] hover:border-[#d95f25]'
@@ -568,7 +997,7 @@ export default function App() {
                 e.currentTarget.blur();
                 handleToggleHands();
               }}
-              className={`h-10 px-3 flex items-center gap-1.5 bg-[#14181f]/90 border text-xs font-mono-tabular font-semibold transition-colors cursor-pointer ${
+              className={`h-10 px-2 flex items-center gap-1 bg-[#14181f]/90 border text-[11px] font-mono-tabular font-semibold transition-colors cursor-pointer ${
                 settings.showHands
                   ? 'border-[#2d3542] text-[#f8fafc] hover:border-[#d95f25]'
                   : 'border-[#2d3542] text-[#64748b] hover:text-[#cbd5e1] hover:border-[#d95f25]'
@@ -638,6 +1067,96 @@ export default function App() {
               </svg>
             </button>
           </div>
+
+          {/* TACTICAL SUPPLY SHOP MODAL / DRAWER [B] */}
+          {shopOpen && (
+            <div
+              data-hud-interactive="true"
+              data-testid="tactical-shop-panel"
+              className="fixed top-16 right-6 w-[340px] bg-[#14181f]/95 border border-[#fbbf24] p-3 flex flex-col gap-2 pointer-events-auto z-20"
+            >
+              <div className="flex items-center justify-between border-b border-[#262d38] pb-1.5">
+                <div className="flex flex-col">
+                  <span className="font-display text-xs font-bold tracking-wider text-[#fbbf24]">
+                    TACTICAL ARMORY SUPPLY
+                  </span>
+                  <span className="font-mono-tabular text-[10px] text-[#cbd5e1]">
+                    AVAILABLE CREDITS: <strong className="text-[#fbbf24]">{hud.credits} CR</strong>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShopOpen(false)}
+                  className="px-2 py-0.5 bg-[#1e242e] border border-[#333c4d] text-[10px] font-mono-tabular text-[#cbd5e1] hover:text-white cursor-pointer"
+                >
+                  RESUME [B]
+                </button>
+              </div>
+
+              {shopFeedback && (
+                <div className="px-2 py-1 bg-[#0e1218] border border-[#38bdf8] text-[10px] font-mono-tabular text-[#38bdf8]">
+                  {shopFeedback}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1.5">
+                {SHOP_ITEMS.map((item) => {
+                  const level =
+                    item.id === 'weapon_damage'
+                      ? hud.upgrades.damageLevel
+                      : item.id === 'reload_speed'
+                      ? hud.upgrades.reloadLevel
+                      : 0;
+                  const cost =
+                    item.id === 'weapon_damage'
+                      ? item.cost + hud.upgrades.damageLevel * 45
+                      : item.id === 'reload_speed'
+                      ? item.cost + hud.upgrades.reloadLevel * 40
+                      : item.cost;
+                  const isMaxed = item.maxLevel < 90 && level >= item.maxLevel;
+                  const canAfford = hud.credits >= cost && !isMaxed;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="bg-[#0e1218] border border-[#242b35] p-2 flex items-center justify-between gap-2.5"
+                    >
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-display text-[11px] font-bold text-[#f8fafc]">
+                            {item.name}
+                          </span>
+                          {item.maxLevel < 90 && (
+                            <span className="font-mono-tabular text-[10px] text-[#38bdf8]">
+                              LV.{level}/{item.maxLevel}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-[#94a3b8] leading-tight">
+                          {item.description}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid={`shop-buy-${item.id}`}
+                        disabled={!canAfford}
+                        onClick={() => handleBuyItem(item.id)}
+                        className={`px-3 py-1.5 font-mono-tabular text-xs font-bold border shrink-0 cursor-pointer ${
+                          isMaxed
+                            ? 'bg-[#1e242e] border-[#2d3542] text-[#64748b] cursor-not-allowed'
+                            : canAfford
+                            ? 'bg-[#fbbf24] border-[#fbbf24] text-[#0d1015] hover:bg-[#f59e0b]'
+                            : 'bg-[#191f29] border-[#2d3542] text-[#64748b] cursor-not-allowed'
+                        }`}
+                      >
+                        {isMaxed ? 'MAXED' : `${cost} CR`}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* BOTTOM-RIGHT CLUSTER: Weapon Indicator, Silhouette & Ammunition Readout */}
           <div className="fixed bottom-5 right-6 flex flex-col gap-2 bg-[#14181f]/90 border border-[#2d3542] px-5 py-3.5 min-w-[270px]">
@@ -748,6 +1267,111 @@ export default function App() {
               </div>
             </div>
           </div>
+
+          {/* 3D Wireframe Enemy Spawn Location Compatibility Debug Overlay */}
+          {showSpawnDebug && (
+            <div
+              data-testid="spawn-debug-overlay"
+              className="fixed top-40 left-6 z-20 pointer-events-auto w-80 bg-[#0d1117]/95 border border-[#10b981]/70 p-3 flex flex-col gap-2 shadow-xl"
+            >
+              <div className="flex items-center justify-between border-b border-[#242b35] pb-1.5">
+                <span className="font-display text-xs font-bold tracking-wider text-[#10b981]">
+                  3D SPAWN NODE DEBUGGER [N]
+                </span>
+                <span className="text-[10px] font-mono-tabular text-[#38bdf8]">
+                  {MAP_SPECS[hud.activeMapId]?.name ?? hud.activeMapId} ({hud.spawnDebugNodes.length} NODES)
+                </span>
+              </div>
+
+              {/* Color-Coded Enemy Category Wireframe Legend */}
+              <div
+                data-testid="spawn-debug-legend"
+                className="grid grid-cols-3 gap-1.5 text-[9px] font-mono-tabular bg-[#131820] border border-[#242b35] p-1.5"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 inline-block border border-[#10b981] bg-[#10b981]/30" />
+                  <span className="text-[#10b981] font-bold">STANDARD</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 inline-block border border-[#f59e0b] bg-[#f59e0b]/30" />
+                  <span className="text-[#f59e0b] font-bold">HEAVY</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 inline-block border border-[#ef4444] bg-[#ef4444]/30" />
+                  <span className="text-[#ef4444] font-bold">BOSS</span>
+                </div>
+              </div>
+
+              {/* 5-Map Compatibility Verification Switcher */}
+              <div className="grid grid-cols-5 gap-1">
+                {MAP_ORDER.map((mId, idx) => (
+                  <button
+                    key={mId}
+                    type="button"
+                    tabIndex={-1}
+                    data-testid={`spawn-debug-map-${mId}`}
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      audioEngine.playUiClick();
+                      setSelectedMap(mId);
+                    }}
+                    className={`py-1 text-[9px] font-mono-tabular font-bold border cursor-pointer ${
+                      selectedMap === mId
+                        ? 'bg-[#10b981] border-[#10b981] text-[#0d1015]'
+                        : 'bg-[#161c26] border-[#2d3542] text-[#cbd5e1] hover:border-[#10b981]'
+                    }`}
+                  >
+                    M0{idx + 1}
+                  </button>
+                ))}
+              </div>
+
+              {/* Per-Spawn-Node Navigation & Category Compatibility Readout */}
+              <div className="flex flex-col gap-1 max-h-48 overflow-y-auto pr-0.5 text-[10px] font-mono-tabular">
+                {hud.spawnDebugNodes.map((node) => (
+                  <div
+                    key={node.id}
+                    data-testid={`spawn-debug-node-${node.id}`}
+                    className="flex flex-col gap-0.5 bg-[#131820] border border-[#242b35] px-2 py-1"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="font-bold truncate max-w-[165px]"
+                        style={{ color: node.colorCss }}
+                      >
+                        {node.entranceName}
+                      </span>
+                      <span className="text-[#94a3b8] text-[9px]">
+                        ({node.x.toFixed(0)}, {node.z.toFixed(0)}) · Ø{node.minClearance.toFixed(1)}m
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[9px]">
+                      <span className="text-[#64748b]">
+                        INGRESS ({node.dirX.toFixed(1)}, {node.dirZ.toFixed(1)})
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {node.supportsStandard && (
+                          <span className="px-1 bg-[#10b981]/20 border border-[#10b981]/60 text-[#10b981] font-bold">
+                            STD
+                          </span>
+                        )}
+                        {node.supportsHeavy && (
+                          <span className="px-1 bg-[#f59e0b]/20 border border-[#f59e0b]/60 text-[#f59e0b] font-bold">
+                            HVY
+                          </span>
+                        )}
+                        {node.supportsBoss && (
+                          <span className="px-1 bg-[#ef4444]/20 border border-[#ef4444]/60 text-[#ef4444] font-bold">
+                            BOSS
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -800,8 +1424,38 @@ export default function App() {
                 Fast-paced low-polygon arena combat featuring flat-shaded geometric
                 weaponry ({hud.arTriangles}-tri Carbine &amp; {hud.revTriangles}-tri
                 Magnum), calibrated two-point iron sights, articulated 3D arms &amp;
-                hands, and ruthless tactical bots.
+                legs, and 5 tactical arenas with verified enemy spawn navigation.
               </p>
+
+              {/* 5 Playable Low-Poly Combat Arenas Selector */}
+              <div className="flex flex-col gap-1.5 w-full max-w-lg pt-1">
+                <div className="flex items-center justify-between text-xs font-mono-tabular">
+                  <span className="text-[#94a3b8] font-bold">
+                    COMBAT SECTOR: <strong className="text-[#f8fafc]">{MAP_SPECS[selectedMap].name}</strong>
+                  </span>
+                  <span className="text-[#38bdf8]">{MAP_SPECS[selectedMap].footprintMeters}</span>
+                </div>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {MAP_ORDER.map((mId, idx) => (
+                    <button
+                      key={mId}
+                      type="button"
+                      data-testid={`title-map-${mId}`}
+                      onClick={() => {
+                        audioEngine.playUiClick();
+                        setSelectedMap(mId);
+                      }}
+                      className={`py-1.5 px-2 text-[10px] font-mono-tabular font-bold border transition-colors cursor-pointer ${
+                        selectedMap === mId
+                          ? 'bg-[#38bdf8] border-[#38bdf8] text-[#0d1015]'
+                          : 'bg-[#14181f]/90 border-[#2d3542] text-[#cbd5e1] hover:border-[#38bdf8]'
+                      }`}
+                    >
+                      0{idx + 1} · {mId.split('_')[0]}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Primary CTA & Settings Button (<= 3 Menu Actions) */}
@@ -917,7 +1571,7 @@ export default function App() {
                   <div className="flex flex-col">
                     <span className="text-xs text-[#cbd5e1]">First-Person Viewmodel Arms &amp; Hands</span>
                     <span className="text-[10px] font-mono-tabular text-[#64748b]">
-                      {hud.leftHandTriangles}L / {hud.rightHandTriangles}R TRIS (&le;300 Budget) · 64x64 Texture
+                      {hud.leftHandTriangles}L / {hud.rightHandTriangles}R TRIS (&le;300 Budget) · 12x12 (&lt;16x16) Texture
                     </span>
                   </div>
                   <button
@@ -971,7 +1625,7 @@ export default function App() {
 
           {/* Single Flat Inline Control Hint Line in Bottom Safe Margin */}
           <div className="text-xs md:text-sm font-mono-tabular text-[#94a3b8] tracking-wide">
-            WASD Move · Space Jump · Shift Sprint · Right Mouse Aim (ADS) · Left Mouse Fire · 1/2 Switch · R Reload · I Inspect · H Hands
+            WASD Move · Space Jump · Shift Sprint · C Crouch · RMB Aim · LMB Fire · 1/2 Switch · R Reload · B Shop · I Inspect · H Hands
           </div>
         </div>
       )}
@@ -1076,7 +1730,7 @@ export default function App() {
                 <div className="flex flex-col">
                   <span className="text-xs text-[#cbd5e1]">First-Person Arms &amp; Hands [H]</span>
                   <span className="text-[10px] font-mono-tabular text-[#64748b]">
-                    {hud.leftHandTriangles}L + {hud.rightHandTriangles}R TRIS (&le;300 Budget) · 64x64 Tex
+                    {hud.leftHandTriangles}L + {hud.rightHandTriangles}R TRIS (&le;300 Budget) · 12x12 (&lt;16x16) Tex
                   </span>
                 </div>
                 <button

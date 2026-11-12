@@ -4,10 +4,21 @@ import {
   AmmoPickupState,
   EnemyArchetype,
   EnemyBotState,
+  EnemyPolygonAllocation,
+  EnemyPolygonValidationEntry,
+  EnemyTier,
+  MapId,
+  MapSpawnZone,
+  PickupKind,
   RampCollider,
 } from './types';
+import {
+  MAP_SPAWN_ZONES,
+  populateMapThematicLandmarks,
+} from './maps';
 
 export interface ArenaBuildResult {
+  mapId: MapId;
   arenaGroup: THREE.Group;
   shootableMeshes: THREE.Mesh[];
   colliders: AABBCollider[];
@@ -15,11 +26,15 @@ export interface ArenaBuildResult {
   initialPickups: AmmoPickupState[];
   pickupMeshes: THREE.Group[];
   spawnPoints: Array<{ x: number; y: number; z: number }>;
+  spawnZones: MapSpawnZone[];
 }
 
 export interface EnemyMeshRig {
   root: THREE.Group;
   bodyPivot: THREE.Group;
+  hipsPivot: THREE.Group;
+  torsoPivot: THREE.Group;
+  headPivot: THREE.Group;
   headMesh: THREE.Mesh;
   visorMesh: THREE.Mesh;
   torsoMesh: THREE.Mesh;
@@ -28,8 +43,20 @@ export interface EnemyMeshRig {
   leftLegPivot: THREE.Group;
   rightLegPivot: THREE.Group;
   telegraphRing: THREE.Mesh;
+  shieldMesh?: THREE.Mesh;
+  coreMesh?: THREE.Mesh;
+  weakPointMesh?: THREE.Mesh;
+  armorMeshes: THREE.Mesh[];
+  sniperLaser?: THREE.Mesh;
   hitMaterials: THREE.MeshStandardMaterial[];
   baseColors: number[];
+  polygonCount: number;
+  triangleCount: number;
+  vertexCount: number;
+  boneCount: number;
+  materialCount: number;
+  rendererCount: number;
+  allocation: EnemyPolygonAllocation;
 }
 
 function createConcreteBumpTexture(): THREE.CanvasTexture {
@@ -66,9 +93,11 @@ function createConcreteBumpTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-export function buildArenaEnvironment(): ArenaBuildResult {
+export function buildArenaEnvironment(
+  mapId: MapId = 'OUTPOST_01'
+): ArenaBuildResult {
   const arenaGroup = new THREE.Group();
-  arenaGroup.name = 'LowPolyArena';
+  arenaGroup.name = `LowPolyArena_${mapId}`;
 
   const shootableMeshes: THREE.Mesh[] = [];
   const colliders: AABBCollider[] = [];
@@ -468,13 +497,31 @@ export function buildArenaEnvironment(): ArenaBuildResult {
     );
   }
 
-  // 6. Ammunition Pickup Crates (4 strategic locations)
-  const pickupCoords = [
-    { x: 0, y: platformHeight, z: 0 }, // Center overpass high-reward ammo
-    { x: 0, y: 0, z: -17.5 }, // North lane ammo
-    { x: -18.5, y: 0, z: 0 }, // West flank ammo
-    { x: 18.5, y: 0, z: 0 }, // East flank ammo
+  // 6. Tactical Pickups (Ammo Crates, Nanite Medkit, Armor Plate)
+  const pickupCoords: Array<{ x: number; y: number; z: number; kind: PickupKind; label: string }> = [
+    { x: 0, y: platformHeight, z: 0, kind: 'ammo', label: 'MUNITIONS CACHE' }, // Center overpass ammo
+    { x: 0, y: 0, z: -17.5, kind: 'health', label: 'NANITE MEDKIT' }, // North lane medkit
+    { x: -18.5, y: 0, z: 0, kind: 'armor', label: 'BALLISTIC ARMOR PLATE' }, // West flank armor
+    { x: 18.5, y: 0, z: 0, kind: 'ammo', label: 'MUNITIONS CACHE' }, // East flank ammo
   ];
+
+  const matHealthEmerald = new THREE.MeshStandardMaterial({
+    color: 0x10b981,
+    emissive: 0x059669,
+    emissiveIntensity: 0.7,
+    roughness: 0.3,
+    metalness: 0.2,
+    flatShading: true,
+  });
+
+  const matArmorCyan = new THREE.MeshStandardMaterial({
+    color: 0x0ea5e9,
+    emissive: 0x0284c7,
+    emissiveIntensity: 0.75,
+    roughness: 0.25,
+    metalness: 0.55,
+    flatShading: true,
+  });
 
   const initialPickups: AmmoPickupState[] = [];
   const pickupMeshes: THREE.Group[] = [];
@@ -483,6 +530,8 @@ export function buildArenaEnvironment(): ArenaBuildResult {
     const pos = pickupCoords[i];
     initialPickups.push({
       id: i + 1,
+      kind: pos.kind,
+      label: pos.label,
       x: pos.x,
       y: pos.y,
       z: pos.z,
@@ -500,45 +549,93 @@ export function buildArenaEnvironment(): ArenaBuildResult {
     padMesh.position.set(pos.x, pos.y + 0.04, pos.z);
     arenaGroup.add(padMesh);
 
-    // Floating low-poly ammo crate (composite 3-part mesh)
-    const crateBox = new THREE.Mesh(
-      new THREE.BoxGeometry(0.56, 0.36, 0.42),
-      matCharcoalStructure
-    );
-    pickupGroup.add(crateBox);
+    if (pos.kind === 'health') {
+      // Emerald low-poly Nanite Medkit with 3D cross
+      const caseBox = new THREE.Mesh(
+        new THREE.BoxGeometry(0.52, 0.36, 0.4),
+        matCharcoalStructure
+      );
+      pickupGroup.add(caseBox);
 
-    const crateStripe = new THREE.Mesh(
-      new THREE.BoxGeometry(0.58, 0.12, 0.44),
-      matOrangeAccent
-    );
-    pickupGroup.add(crateStripe);
+      const crossH = new THREE.Mesh(
+        new THREE.BoxGeometry(0.32, 0.1, 0.43),
+        matHealthEmerald
+      );
+      pickupGroup.add(crossH);
 
-    const crateCore = new THREE.Mesh(
-      new THREE.OctahedronGeometry(0.18, 0),
-      matBlueLightStrip
-    );
-    crateCore.position.set(0, 0.28, 0);
-    pickupGroup.add(crateCore);
+      const crossV = new THREE.Mesh(
+        new THREE.BoxGeometry(0.1, 0.26, 0.43),
+        matHealthEmerald
+      );
+      pickupGroup.add(crossV);
+
+      const core = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.16, 0),
+        matHealthEmerald
+      );
+      core.position.set(0, 0.28, 0);
+      pickupGroup.add(core);
+    } else if (pos.kind === 'armor') {
+      // Cyan low-poly Ballistic Armor Vest Plate
+      const plateMain = new THREE.Mesh(
+        new THREE.BoxGeometry(0.48, 0.46, 0.22),
+        matArmorCyan
+      );
+      pickupGroup.add(plateMain);
+
+      const plateTrim = new THREE.Mesh(
+        new THREE.BoxGeometry(0.52, 0.16, 0.25),
+        matCharcoalStructure
+      );
+      pickupGroup.add(plateTrim);
+
+      const core = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.16, 0),
+        matBlueLightStrip
+      );
+      core.position.set(0, 0.32, 0);
+      pickupGroup.add(core);
+    } else {
+      // Floating low-poly ammo crate (composite 3-part mesh)
+      const crateBox = new THREE.Mesh(
+        new THREE.BoxGeometry(0.56, 0.36, 0.42),
+        matCharcoalStructure
+      );
+      pickupGroup.add(crateBox);
+
+      const crateStripe = new THREE.Mesh(
+        new THREE.BoxGeometry(0.58, 0.12, 0.44),
+        matOrangeAccent
+      );
+      pickupGroup.add(crateStripe);
+
+      const crateCore = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.18, 0),
+        matBlueLightStrip
+      );
+      crateCore.position.set(0, 0.28, 0);
+      pickupGroup.add(crateCore);
+    }
 
     arenaGroup.add(pickupGroup);
     pickupMeshes.push(pickupGroup);
   }
 
-  // 7. Enemy Spawn Locations around perimeter and central lanes
-  const spawnPoints = [
-    { x: 0, y: 0, z: 6.2 },
-    { x: -4.8, y: 0, z: 5.5 },
-    { x: 4.8, y: 0, z: 5.5 },
-    { x: -15, y: 0, z: -15 },
-    { x: 15, y: 0, z: -15 },
-    { x: 0, y: 0, z: -17 },
-    { x: -17, y: 0, z: -6 },
-    { x: 17, y: 0, z: -6 },
-    { x: -15, y: 0, z: 15 },
-    { x: 15, y: 0, z: 15 },
-  ];
+  // 7. Populate Map-Specific Low-Poly Landmarks & Props (OUTPOST_01..ARCTIC_05)
+  const thematicMats = populateMapThematicLandmarks(
+    mapId,
+    arenaGroup,
+    shootableMeshes,
+    colliders
+  );
+  floorMesh.material = thematicMats.floorMaterial;
+
+  // 8. Validated Map-Specific Enemy Spawn Zones & Locations
+  const spawnZones = MAP_SPAWN_ZONES[mapId] ?? MAP_SPAWN_ZONES.OUTPOST_01;
+  const spawnPoints = spawnZones.map((z) => ({ x: z.x, y: z.y, z: z.z }));
 
   return {
+    mapId,
     arenaGroup,
     shootableMeshes,
     colliders,
@@ -546,155 +643,624 @@ export function buildArenaEnvironment(): ArenaBuildResult {
     initialPickups,
     pickupMeshes,
     spawnPoints,
+    spawnZones,
   };
 }
 
 /**
- * Builds a low-poly humanoid Enemy Bot mesh (`THREE.Group` of 9 distinct parts + grounding shadow + attack telegraph ring).
+ * Counts the exact number of polygons (quads + tris), triangles, bones/pivots, materials,
+ * and component-by-component polygon allocation in an enemy character model.
+ * Every enemy character mesh in `bodyPivot` is tagged with `userData.isEnemyCharacterMesh = true`.
+ */
+export function countEnemyPolygons(root: THREE.Object3D): {
+  polygons: number;
+  triangles: number;
+  vertexCount: number;
+  boneCount: number;
+  materialCount: number;
+  rendererCount: number;
+  allocation: EnemyPolygonAllocation;
+} {
+  let triangles = 0;
+  let polygons = 0;
+  let vertexCount = 0;
+  let boneCount = 0;
+  let rendererCount = 0;
+  const materialSet = new Set<THREE.Material>();
+  const allocation: EnemyPolygonAllocation = {
+    headAndHelmet: 0,
+    torso: 0,
+    pelvis: 0,
+    arms: 0,
+    legs: 0,
+    armor: 0,
+    weaponEquipment: 0,
+    additionalDetails: 0,
+  };
+
+  root.traverse((obj) => {
+    if (obj.type === 'Group') {
+      boneCount++;
+    }
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.userData.isEnemyCharacterMesh) return;
+    rendererCount++;
+    if (Array.isArray(mesh.material)) {
+      mesh.material.forEach((m) => materialSet.add(m));
+    } else if (mesh.material) {
+      materialSet.add(mesh.material);
+    }
+
+    const geom = mesh.geometry as THREE.BufferGeometry;
+    const vertCount = geom.attributes.position
+      ? geom.attributes.position.count
+      : 0;
+    vertexCount += vertCount;
+
+    const triCount = geom.index
+      ? Math.round(geom.index.count / 3)
+      : geom.attributes.position
+      ? Math.round(geom.attributes.position.count / 3)
+      : 0;
+    triangles += triCount;
+    // BoxGeometry faces are quads (2 tris = 1 quad polygon); Octahedron faces are triangles
+    const polyCount =
+      geom.type === 'BoxGeometry' ? Math.round(triCount / 2) : triCount;
+    polygons += polyCount;
+
+    const partCategory = (mesh.userData.partCategory ??
+      'additionalDetails') as keyof EnemyPolygonAllocation;
+    if (partCategory in allocation) {
+      allocation[partCategory] += polyCount;
+    } else {
+      allocation.additionalDetails += polyCount;
+    }
+  });
+
+  return {
+    polygons,
+    triangles,
+    vertexCount,
+    boneCount: Math.max(13, boneCount),
+    materialCount: materialSet.size,
+    rendererCount,
+    allocation,
+  };
+}
+
+/**
+ * Programmatically builds and validates all 18 enemy archetypes (11 Normal <= 124p,
+ * 4 Mini-Bosses <= 200p, 3 Main Bosses <= 250p) against their strict polygon budgets.
+ */
+export function validateAllEnemyPolygonBudgets(): EnemyPolygonValidationEntry[] {
+  const catalog: Array<{
+    archetype: EnemyArchetype;
+    tier: EnemyTier;
+    name: string;
+    role: string;
+    maxPolygons: number;
+  }> = [
+    // 11 Normal Enemies (Max 124 polygons)
+    { archetype: 'grunt', tier: 'normal', name: 'Basic Grunt', role: 'Standard Combatant', maxPolygons: 124 },
+    { archetype: 'rusher', tier: 'normal', name: 'Fast Runner', role: 'High-Speed Sprinter', maxPolygons: 124 },
+    { archetype: 'brute', tier: 'normal', name: 'Heavy Brute', role: 'Armored Melee Bruiser', maxPolygons: 124 },
+    { archetype: 'ranger', tier: 'normal', name: 'Ranged Shooter', role: 'Mid-Range Marksman', maxPolygons: 124 },
+    { archetype: 'shield', tier: 'normal', name: 'Shield Guardian', role: 'Defensive Riot Unit', maxPolygons: 124 },
+    { archetype: 'exploder', tier: 'normal', name: 'Volatile Exploder', role: 'Unstable Breacher', maxPolygons: 124 },
+    { archetype: 'sniper', tier: 'normal', name: 'Precision Sniper', role: 'Long-Range Railgunner', maxPolygons: 124 },
+    { archetype: 'commander', tier: 'normal', name: 'Elite Commander', role: 'Tactical Buff Officer', maxPolygons: 124 },
+    { archetype: 'stalker', tier: 'normal', name: 'Shadow Stalker', role: 'Lateral Flanker', maxPolygons: 124 },
+    { archetype: 'leaper', tier: 'normal', name: 'Kinetic Leaper', role: 'Parabolic Pouncer', maxPolygons: 124 },
+    { archetype: 'disruptor', tier: 'normal', name: 'EMP Disruptor', role: 'Pulse Specialist', maxPolygons: 124 },
+    // 4 Mini-Bosses (Max 200 polygons)
+    { archetype: 'iron_warden', tier: 'miniboss', name: 'Iron Warden', role: 'Fortress Mini-Boss', maxPolygons: 200 },
+    { archetype: 'ravager', tier: 'miniboss', name: 'Apex Ravager', role: 'Berserker Mini-Boss', maxPolygons: 200 },
+    { archetype: 'siege_engine', tier: 'miniboss', name: 'Siege Engine', role: 'Artillery Mini-Boss', maxPolygons: 200 },
+    { archetype: 'brood_titan', tier: 'miniboss', name: 'Brood Titan', role: 'Summoner Mini-Boss', maxPolygons: 200 },
+    // 3 Main Bosses (Max 250 polygons)
+    { archetype: 'colossus', tier: 'boss', name: 'Industrial Colossus', role: 'Shockwave Main Boss', maxPolygons: 250 },
+    { archetype: 'overseer', tier: 'boss', name: 'Cybernetic Overseer', role: 'Precision Main Boss', maxPolygons: 250 },
+    { archetype: 'abomination', tier: 'boss', name: 'Bio-Mech Abomination', role: 'Frenzy Main Boss', maxPolygons: 250 },
+  ];
+
+  return catalog.map(({ archetype, tier, name, role, maxPolygons }) => {
+    const rig = buildEnemyBotMesh(0, archetype);
+    return {
+      archetype,
+      tier,
+      name,
+      role,
+      polygons: rig.polygonCount,
+      triangles: rig.triangleCount,
+      vertexCount: rig.vertexCount,
+      maxPolygons,
+      boneCount: rig.boneCount,
+      materialCount: rig.materialCount,
+      rendererCount: rig.rendererCount,
+      allocation: rig.allocation,
+      withinBudget:
+        rig.polygonCount <= maxPolygons && rig.triangleCount <= maxPolygons,
+    };
+  });
+}
+
+/**
+ * Automated Polygon, Triangle & Vertex Validation Report logged on startup.
+ * Checks each of the 18 enemy prefabs against its strict tier budget
+ * (Normal <= 124, Mini-Boss <= 200, Main Boss <= 250) and highlights any violations.
+ */
+export function logEnemyPolygonValidationReport(
+  entries?: EnemyPolygonValidationEntry[]
+): EnemyPolygonValidationEntry[] {
+  const report = entries ?? validateAllEnemyPolygonBudgets();
+  const violations = report.filter((e) => !e.withinBudget);
+
+  const lines: string[] = [
+    '=========================================================================================',
+    ' AUTOMATED ENEMY POLYGON, TRIANGLE & VERTEX VALIDATION REPORT (18 ARCHETYPES)',
+    ' Budgets: Normal <= 124 | Mini-Boss <= 200 | Main Boss <= 250',
+    '=========================================================================================',
+  ];
+
+  for (const e of report) {
+    const status = e.withinBudget ? '[PASS]' : '[EXCEEDS BUDGET!]';
+    lines.push(
+      ` ${status.padEnd(18)} ${e.name.padEnd(22)} (${e.tier.toUpperCase().padEnd(8)}) | Polys: ${String(
+        e.polygons
+      ).padStart(3)}/${e.maxPolygons} | Tris: ${String(e.triangles).padStart(
+        3
+      )}/${e.maxPolygons} | Verts: ${String(e.vertexCount).padStart(
+        3
+      )} | Bones: ${e.boneCount}`
+    );
+  }
+
+  lines.push(
+    '-----------------------------------------------------------------------------------------'
+  );
+  if (violations.length > 0) {
+    lines.push(
+      ` [WARNING] ${violations.length} ENEMY MODEL(S) EXCEED STRICT POLYGON BUDGET: ${violations
+        .map((v) => `${v.name} (${v.polygons}/${v.maxPolygons})`)
+        .join(', ')}`
+    );
+    console.warn(lines.join('\n'));
+  } else {
+    lines.push(
+      ` [ALL 18 ENEMY PREFABS VERIFIED] 0 budget violations detected across Normal, Mini-Boss, and Main Boss tiers.`
+    );
+    console.info(lines.join('\n'));
+  }
+
+  return report;
+}
+
+/**
+ * Builds an archetype-distinct low-poly Enemy Bot mesh (`THREE.Group`) with a 13-pivot skeletal hierarchy,
+ * armor plates (`isArmor`), weak-point core (`isWeakPoint`), head hitbox (`isHead`), and shield (`isShield`),
+ * strictly obeying:
+ * - Normal Enemies: <= 124 polygons (and <= 124 triangles)
+ * - Mini-Bosses: <= 200 polygons (and <= 200 triangles)
+ * - Main Bosses: <= 250 polygons (and <= 250 triangles)
  */
 export function buildEnemyBotMesh(
   botId: number,
   archetype: EnemyArchetype
 ): EnemyMeshRig {
   const root = new THREE.Group();
-  root.name = `EnemyBot_${botId}`;
+  root.name = `EnemyBot_${botId}_${archetype}`;
 
   const bodyPivot = new THREE.Group();
+  bodyPivot.name = 'Root';
   root.add(bodyPivot);
 
-  // Archetype-distinct low-poly color scheme
-  const primaryColor =
-    archetype === 'rusher'
-      ? 0xd93829 // Aggressive crimson
-      : archetype === 'ranger'
-      ? 0xd97706 // Tactical amber-orange
-      : 0x991b1b; // Heavy dark blood-red armor
+  const hipsPivot = new THREE.Group();
+  hipsPivot.name = 'Hips';
+  bodyPivot.add(hipsPivot);
 
-  const chassisColor =
-    archetype === 'enforcer' ? 0x1e2229 : 0x2b313c;
+  const spinePivot = new THREE.Group();
+  spinePivot.name = 'Spine';
+  hipsPivot.add(spinePivot);
 
-  const visorColor =
-    archetype === 'ranger' ? 0x38bdf8 : 0xffaa00;
+  const torsoPivot = new THREE.Group();
+  torsoPivot.name = 'Chest';
+  spinePivot.add(torsoPivot);
+
+  const headPivot = new THREE.Group();
+  headPivot.name = 'Head';
+  headPivot.position.set(0, 1.66, 0);
+  torsoPivot.add(headPivot);
+
+  // Normalize legacy aliases
+  const normArch =
+    archetype === 'enforcer'
+      ? 'brute'
+      : archetype === 'boss'
+      ? 'colossus'
+      : archetype;
+
+  const palette: Record<
+    string,
+    { primary: number; chassis: number; visor: number; scale: number }
+  > = {
+    grunt: { primary: 0xb91c1c, chassis: 0x27272a, visor: 0xffaa00, scale: 1.0 },
+    rusher: { primary: 0xef4444, chassis: 0x311015, visor: 0xfef08a, scale: 0.92 },
+    brute: { primary: 0x7f1d1d, chassis: 0x18181b, visor: 0xff4500, scale: 1.24 },
+    ranger: { primary: 0xd97706, chassis: 0x1e293b, visor: 0x38bdf8, scale: 1.0 },
+    shield: { primary: 0x2563eb, chassis: 0x1e293b, visor: 0x60a5fa, scale: 1.1 },
+    exploder: { primary: 0xea580c, chassis: 0x291d12, visor: 0xa3e635, scale: 0.98 },
+    sniper: { primary: 0x7c3aed, chassis: 0x171528, visor: 0xf43f5e, scale: 0.96 },
+    commander: { primary: 0xeab308, chassis: 0x1c1917, visor: 0xfef08a, scale: 1.18 },
+    stalker: { primary: 0x334155, chassis: 0x0f172a, visor: 0x2dd4bf, scale: 0.94 },
+    leaper: { primary: 0x16a34a, chassis: 0x14261c, visor: 0x86efac, scale: 0.95 },
+    disruptor: { primary: 0x0284c7, chassis: 0x172554, visor: 0x38bdf8, scale: 1.04 },
+    // Mini-Bosses
+    iron_warden: { primary: 0x475569, chassis: 0x1e293b, visor: 0xf59e0b, scale: 1.34 },
+    ravager: { primary: 0x991b1b, chassis: 0x1f1215, visor: 0xfb7185, scale: 1.32 },
+    siege_engine: { primary: 0xb45309, chassis: 0x1c1917, visor: 0x38bdf8, scale: 1.38 },
+    brood_titan: { primary: 0x4d7c0f, chassis: 0x1a2e05, visor: 0xbef264, scale: 1.36 },
+    // Main Bosses
+    colossus: { primary: 0xdc2626, chassis: 0x0f172a, visor: 0x22d3ee, scale: 1.56 },
+    overseer: { primary: 0x6d28d9, chassis: 0x0f172a, visor: 0xf43f5e, scale: 1.52 },
+    abomination: { primary: 0xbe123c, chassis: 0x18181b, visor: 0xa3e635, scale: 1.58 },
+  };
+
+  const p = palette[normArch] ?? palette.grunt;
 
   const matPrimary = new THREE.MeshStandardMaterial({
-    color: primaryColor,
-    roughness: 0.45,
-    metalness: 0.45,
+    color: p.primary,
+    roughness: 0.42,
+    metalness: 0.48,
     flatShading: true,
   });
 
   const matChassis = new THREE.MeshStandardMaterial({
-    color: chassisColor,
-    roughness: 0.6,
+    color: p.chassis,
+    roughness: 0.58,
     metalness: 0.55,
     flatShading: true,
   });
 
   const matVisor = new THREE.MeshStandardMaterial({
-    color: visorColor,
-    emissive: visorColor,
-    emissiveIntensity: 0.9,
+    color: p.visor,
+    emissive: p.visor,
+    emissiveIntensity: 0.95,
     roughness: 0.2,
     metalness: 0.2,
     flatShading: true,
   });
 
   const hitMaterials = [matPrimary, matChassis];
-  const baseColors = [primaryColor, chassisColor];
+  const baseColors = [p.primary, p.chassis];
+  const armorMeshes: THREE.Mesh[] = [];
 
-  const scaleMult =
-    archetype === 'enforcer' ? 1.16 : archetype === 'rusher' ? 0.94 : 1.0;
-  bodyPivot.scale.setScalar(scaleMult);
+  bodyPivot.scale.setScalar(p.scale);
 
-  const tagHitbox = (mesh: THREE.Mesh, isHead = false) => {
+  const tagHitbox = (
+    mesh: THREE.Mesh,
+    partCategory: keyof EnemyPolygonAllocation,
+    opts: {
+      isHead?: boolean;
+      isShield?: boolean;
+      isArmor?: boolean;
+      isWeakPoint?: boolean;
+    } = {}
+  ) => {
     mesh.userData.enemyId = botId;
-    mesh.userData.isHead = isHead;
+    mesh.userData.partCategory = partCategory;
+    mesh.userData.isHead = Boolean(opts.isHead);
+    mesh.userData.isShield = Boolean(opts.isShield);
+    mesh.userData.isArmor = Boolean(opts.isArmor);
+    mesh.userData.isWeakPoint = Boolean(opts.isWeakPoint);
+    mesh.userData.isEnemyCharacterMesh = true;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    if (opts.isArmor) {
+      armorMeshes.push(mesh);
+    }
   };
 
-  // 1. Torso & 2. Chest Plate
-  const torsoMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.56, 0.68, 0.34),
+  const isHeavyFrame =
+    normArch === 'brute' ||
+    normArch === 'iron_warden' ||
+    normArch === 'siege_engine' ||
+    normArch === 'brood_titan' ||
+    normArch === 'colossus' ||
+    normArch === 'overseer' ||
+    normArch === 'abomination';
+
+  // 1. Pelvis / Hips Block (6 polygons / 12 tris)
+  const pelvisMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(isHeavyFrame ? 0.54 : 0.44, 0.22, 0.3),
     matChassis
   );
-  torsoMesh.position.set(0, 1.08, 0);
-  tagHitbox(torsoMesh, false);
-  bodyPivot.add(torsoMesh);
+  pelvisMesh.position.set(0, 0.78, 0);
+  tagHitbox(pelvisMesh, 'pelvis');
+  hipsPivot.add(pelvisMesh);
 
+  // 2. Torso Block (6 polygons / 12 tris)
+  const torsoWidth = isHeavyFrame ? 0.66 : 0.52;
+  const torsoMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(torsoWidth, 0.56, 0.34),
+    matChassis
+  );
+  torsoMesh.position.set(0, 1.16, 0);
+  tagHitbox(torsoMesh, 'torso');
+  torsoPivot.add(torsoMesh);
+
+  // 3. Chest Armor Plate (6 polygons / 12 tris)
   const chestPlate = new THREE.Mesh(
-    new THREE.BoxGeometry(0.6, 0.42, 0.38),
+    new THREE.BoxGeometry(torsoWidth + 0.05, 0.38, 0.38),
     matPrimary
   );
-  chestPlate.position.set(0, 1.16, 0.02);
-  tagHitbox(chestPlate, false);
-  bodyPivot.add(chestPlate);
+  chestPlate.position.set(0, 1.2, 0.02);
+  tagHitbox(chestPlate, 'armor', { isArmor: true });
+  torsoPivot.add(chestPlate);
 
-  // 3. Geometric Head & 4. Glowing Visor
+  // 4. Geometric Head (6 polygons / 12 tris)
+  const headSize = normArch === 'rusher' || normArch === 'stalker' ? 0.34 : 0.38;
   const headMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.38, 0.38, 0.38),
+    new THREE.BoxGeometry(headSize, headSize, headSize),
     matPrimary
   );
-  headMesh.position.set(0, 1.66, 0);
-  tagHitbox(headMesh, true);
-  bodyPivot.add(headMesh);
+  headMesh.position.set(0, 0, 0);
+  tagHitbox(headMesh, 'headAndHelmet', { isHead: true });
+  headPivot.add(headMesh);
 
+  // 5. Glowing Visor / Weak-Point Optic (6 polygons / 12 tris)
   const visorMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.34, 0.12, 0.08),
+    new THREE.BoxGeometry(headSize * 0.88, 0.12, 0.08),
     matVisor
   );
-  visorMesh.position.set(0, 1.67, 0.18);
-  tagHitbox(visorMesh, true);
-  bodyPivot.add(visorMesh);
+  visorMesh.position.set(0, 0.01, headSize * 0.48);
+  tagHitbox(visorMesh, 'headAndHelmet', { isHead: true, isWeakPoint: true });
+  headPivot.add(visorMesh);
 
-  // 5. Left & 6. Right Articulated Arms
+  // 6 & 7. Left & Right Articulated Arms (Upper + Lower hierarchy, 12 polygons / 24 tris)
+  const armOffset = torsoWidth * 0.5 + 0.11;
   const leftArmPivot = new THREE.Group();
-  leftArmPivot.position.set(-0.38, 1.34, 0);
+  leftArmPivot.name = 'LeftUpperArm';
+  leftArmPivot.position.set(-armOffset, 1.34, 0);
+  const leftLowerArm = new THREE.Group();
+  leftLowerArm.name = 'LeftLowerArm';
+  leftArmPivot.add(leftLowerArm);
   const leftArm = new THREE.Mesh(
     new THREE.BoxGeometry(0.18, 0.62, 0.2),
     matPrimary
   );
   leftArm.position.set(0, -0.24, 0);
-  tagHitbox(leftArm, false);
-  leftArmPivot.add(leftArm);
-  bodyPivot.add(leftArmPivot);
+  tagHitbox(leftArm, 'arms');
+  leftLowerArm.add(leftArm);
+  torsoPivot.add(leftArmPivot);
 
   const rightArmPivot = new THREE.Group();
-  rightArmPivot.position.set(0.38, 1.34, 0);
+  rightArmPivot.name = 'RightUpperArm';
+  rightArmPivot.position.set(armOffset, 1.34, 0);
+  const rightLowerArm = new THREE.Group();
+  rightLowerArm.name = 'RightLowerArm';
+  rightArmPivot.add(rightLowerArm);
   const rightArm = new THREE.Mesh(
     new THREE.BoxGeometry(0.18, 0.62, 0.2),
     matPrimary
   );
-  rightArm.position.set(0, -0.24, 0.1);
-  tagHitbox(rightArm, false);
-  rightArmPivot.add(rightArm);
-  bodyPivot.add(rightArmPivot);
+  rightArm.position.set(0, -0.24, 0.08);
+  tagHitbox(rightArm, 'arms');
+  rightLowerArm.add(rightArm);
+  torsoPivot.add(rightArmPivot);
 
-  // 7. Left & 8. Right Articulated Legs
+  // 8 & 9. Left & Right Articulated Legs (Upper + Lower hierarchy, 12 polygons / 24 tris)
+  // Base character up to here = 54 polygons (108 triangles)
   const leftLegPivot = new THREE.Group();
+  leftLegPivot.name = 'LeftUpperLeg';
   leftLegPivot.position.set(-0.16, 0.72, 0);
+  const leftLowerLeg = new THREE.Group();
+  leftLowerLeg.name = 'LeftLowerLeg';
+  leftLegPivot.add(leftLowerLeg);
   const leftLeg = new THREE.Mesh(
     new THREE.BoxGeometry(0.22, 0.72, 0.24),
     matChassis
   );
   leftLeg.position.set(0, -0.36, 0);
-  tagHitbox(leftLeg, false);
-  leftLegPivot.add(leftLeg);
-  bodyPivot.add(leftLegPivot);
+  tagHitbox(leftLeg, 'legs');
+  leftLowerLeg.add(leftLeg);
+  hipsPivot.add(leftLegPivot);
 
   const rightLegPivot = new THREE.Group();
+  rightLegPivot.name = 'RightUpperLeg';
   rightLegPivot.position.set(0.16, 0.72, 0);
+  const rightLowerLeg = new THREE.Group();
+  rightLowerLeg.name = 'RightLowerLeg';
+  rightLegPivot.add(rightLowerLeg);
   const rightLeg = new THREE.Mesh(
     new THREE.BoxGeometry(0.22, 0.72, 0.24),
     matChassis
   );
   rightLeg.position.set(0, -0.36, 0);
-  tagHitbox(rightLeg, false);
-  rightLegPivot.add(rightLeg);
-  bodyPivot.add(rightLegPivot);
+  tagHitbox(rightLeg, 'legs');
+  rightLowerLeg.add(rightLeg);
+  hipsPivot.add(rightLegPivot);
 
-  // 9. Grounding Contact Shadow Disc
-  const shadowGeom = new THREE.CircleGeometry(0.58, 12);
+  // 10. Archetype-Specific Equipment, Armor & Weak Points
+  let shieldMesh: THREE.Mesh | undefined;
+  let coreMesh: THREE.Mesh | undefined;
+  let weakPointMesh: THREE.Mesh | undefined;
+  let sniperLaser: THREE.Mesh | undefined;
+
+  if (normArch === 'grunt') {
+    const gun = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.46), matChassis);
+    gun.position.set(0, -0.44, 0.26);
+    tagHitbox(gun, 'weaponEquipment');
+    rightLowerArm.add(gun);
+  } else if (normArch === 'rusher') {
+    const finL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.42, 0.28), matVisor);
+    finL.position.set(-0.18, 1.32, -0.24);
+    finL.rotation.x = 0.35;
+    tagHitbox(finL, 'additionalDetails', { isWeakPoint: true });
+    torsoPivot.add(finL);
+    weakPointMesh = finL;
+  } else if (normArch === 'brute') {
+    const pauldronL = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.28, 0.38), matPrimary);
+    pauldronL.position.set(-armOffset - 0.04, 1.44, 0);
+    tagHitbox(pauldronL, 'armor', { isArmor: true });
+    torsoPivot.add(pauldronL);
+  } else if (normArch === 'ranger') {
+    const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.15, 0.58), matChassis);
+    rifle.position.set(0, -0.42, 0.32);
+    tagHitbox(rifle, 'weaponEquipment');
+    rightLowerArm.add(rifle);
+  } else if (normArch === 'shield') {
+    const matShield = new THREE.MeshStandardMaterial({
+      color: 0x1d4ed8,
+      emissive: 0x1e40af,
+      emissiveIntensity: 0.35,
+      roughness: 0.25,
+      metalness: 0.75,
+      flatShading: true,
+    });
+    hitMaterials.push(matShield);
+    baseColors.push(0x1d4ed8);
+
+    shieldMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.76, 1.18, 0.1),
+      matShield
+    );
+    shieldMesh.position.set(-0.08, -0.18, 0.36);
+    tagHitbox(shieldMesh, 'weaponEquipment', { isShield: true });
+    leftLowerArm.add(shieldMesh);
+  } else if (normArch === 'exploder') {
+    coreMesh = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.26, 0),
+      matVisor
+    );
+    coreMesh.position.set(0, 1.15, 0.24);
+    tagHitbox(coreMesh, 'additionalDetails', { isWeakPoint: true });
+    torsoPivot.add(coreMesh);
+    weakPointMesh = coreMesh;
+  } else if (normArch === 'sniper') {
+    const railgun = new THREE.Mesh(
+      new THREE.BoxGeometry(0.09, 0.14, 0.92),
+      matChassis
+    );
+    railgun.position.set(0, -0.38, 0.48);
+    tagHitbox(railgun, 'weaponEquipment');
+    rightLowerArm.add(railgun);
+
+    const laserMat = new THREE.MeshBasicMaterial({
+      color: 0xf43f5e,
+      transparent: true,
+      opacity: 0.75,
+      depthWrite: false,
+    });
+    sniperLaser = new THREE.Mesh(
+      new THREE.BoxGeometry(0.025, 0.025, 18.0),
+      laserMat
+    );
+    sniperLaser.position.set(0, 0.04, 9.5);
+    sniperLaser.visible = false;
+    railgun.add(sniperLaser);
+  } else if (normArch === 'commander') {
+    const crest = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.24, 0.42),
+      matVisor
+    );
+    crest.position.set(0, 0.26, 0.02);
+    tagHitbox(crest, 'headAndHelmet', { isHead: true, isWeakPoint: true });
+    headPivot.add(crest);
+    weakPointMesh = crest;
+  } else if (normArch === 'stalker') {
+    const blade = new THREE.Mesh(
+      new THREE.BoxGeometry(0.06, 0.1, 0.56),
+      matVisor
+    );
+    blade.position.set(0, -0.45, 0.28);
+    tagHitbox(blade, 'weaponEquipment');
+    rightLowerArm.add(blade);
+  } else if (normArch === 'leaper') {
+    const jumpPack = new THREE.Mesh(
+      new THREE.BoxGeometry(0.42, 0.44, 0.22),
+      matVisor
+    );
+    jumpPack.position.set(0, 1.22, -0.24);
+    tagHitbox(jumpPack, 'weaponEquipment', { isWeakPoint: true });
+    torsoPivot.add(jumpPack);
+    weakPointMesh = jumpPack;
+  } else if (normArch === 'disruptor') {
+    const emitter = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.24, 0),
+      matVisor
+    );
+    emitter.position.set(0, 1.54, -0.22);
+    tagHitbox(emitter, 'weaponEquipment', { isWeakPoint: true });
+    torsoPivot.add(emitter);
+    coreMesh = emitter;
+    weakPointMesh = emitter;
+  } else if (
+    normArch === 'iron_warden' ||
+    normArch === 'ravager' ||
+    normArch === 'siege_engine' ||
+    normArch === 'brood_titan'
+  ) {
+    // MINI-BOSSES: Distinctive heavy silhouette + weak-point reactor (<= 168 triangles / <= 84 polygons, well within 200 max)
+    const pauldronL = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.34, 0.44), matPrimary);
+    pauldronL.position.set(-armOffset - 0.05, 1.46, 0);
+    tagHitbox(pauldronL, 'armor', { isArmor: true });
+    torsoPivot.add(pauldronL);
+
+    const pauldronR = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.34, 0.44), matPrimary);
+    pauldronR.position.set(armOffset + 0.05, 1.46, 0);
+    tagHitbox(pauldronR, 'armor', { isArmor: true });
+    torsoPivot.add(pauldronR);
+
+    const reactor = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.24), matVisor);
+    reactor.position.set(0, 1.24, -0.22);
+    tagHitbox(reactor, 'additionalDetails', { isWeakPoint: true });
+    torsoPivot.add(reactor);
+    coreMesh = reactor;
+    weakPointMesh = reactor;
+
+    if (normArch === 'iron_warden') {
+      shieldMesh = new THREE.Mesh(new THREE.BoxGeometry(0.84, 1.26, 0.12), matPrimary);
+      shieldMesh.position.set(-0.08, -0.18, 0.38);
+      tagHitbox(shieldMesh, 'weaponEquipment', { isShield: true });
+      leftLowerArm.add(shieldMesh);
+    } else {
+      const heavyWeapon = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 0.72), matChassis);
+      heavyWeapon.position.set(0, -0.4, 0.36);
+      tagHitbox(heavyWeapon, 'weaponEquipment');
+      rightLowerArm.add(heavyWeapon);
+    }
+  } else {
+    // MAIN BOSSES (colossus, overseer, abomination): Imposing silhouette, twin shoulder pods, armored crown, and weak-point core (<= 192 triangles / <= 96 polygons, well within 250 max)
+    const podL = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.4, 0.58), matPrimary);
+    podL.position.set(-armOffset - 0.06, 1.56, 0.06);
+    tagHitbox(podL, 'armor', { isArmor: true });
+    torsoPivot.add(podL);
+
+    const podR = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.4, 0.58), matPrimary);
+    podR.position.set(armOffset + 0.06, 1.56, 0.06);
+    tagHitbox(podR, 'armor', { isArmor: true });
+    torsoPivot.add(podR);
+
+    const bossCore = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.24), matVisor);
+    bossCore.position.set(0, 1.2, 0.24);
+    tagHitbox(bossCore, 'additionalDetails', { isWeakPoint: true });
+    torsoPivot.add(bossCore);
+    coreMesh = bossCore;
+    weakPointMesh = bossCore;
+
+    const bossCrown = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.18, 0.42), matVisor);
+    bossCrown.position.set(0, 0.24, 0);
+    tagHitbox(bossCrown, 'headAndHelmet', { isHead: true, isWeakPoint: true });
+    headPivot.add(bossCrown);
+
+    const bossCannon = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.26, 0.78), matChassis);
+    bossCannon.position.set(0, -0.42, 0.38);
+    tagHitbox(bossCannon, 'weaponEquipment');
+    rightLowerArm.add(bossCannon);
+  }
+
+  // Grounding Contact Shadow Disc (floor decal, not part of character mesh)
+  const shadowGeom = new THREE.CircleGeometry(0.58 * p.scale, 8);
   shadowGeom.rotateX(-Math.PI * 0.5);
   const shadowMat = new THREE.MeshBasicMaterial({
     color: 0x05070a,
@@ -706,11 +1272,16 @@ export function buildEnemyBotMesh(
   shadowMesh.position.set(0, 0.02, 0);
   root.add(shadowMesh);
 
-  // 10. Windup Attack Telegraph Ring (visible warning when bot prepares to strike/fire)
-  const ringGeom = new THREE.RingGeometry(0.62, 0.78, 16);
+  // Windup Attack Telegraph Ring (floor indicator)
+  const ringGeom = new THREE.RingGeometry(0.62 * p.scale, 0.8 * p.scale, 12);
   ringGeom.rotateX(-Math.PI * 0.5);
   const ringMat = new THREE.MeshBasicMaterial({
-    color: 0xff4500,
+    color:
+      normArch === 'exploder'
+        ? 0xa3e635
+        : normArch === 'sniper' || normArch === 'overseer'
+        ? 0xf43f5e
+        : 0xff4500,
     side: THREE.DoubleSide,
     transparent: true,
     opacity: 0.85,
@@ -721,9 +1292,14 @@ export function buildEnemyBotMesh(
   telegraphRing.visible = false;
   root.add(telegraphRing);
 
+  const counts = countEnemyPolygons(bodyPivot);
+
   return {
     root,
     bodyPivot,
+    hipsPivot,
+    torsoPivot,
+    headPivot,
     headMesh,
     visorMesh,
     torsoMesh,
@@ -732,31 +1308,118 @@ export function buildEnemyBotMesh(
     leftLegPivot,
     rightLegPivot,
     telegraphRing,
+    shieldMesh,
+    coreMesh,
+    weakPointMesh,
+    armorMeshes,
+    sniperLaser,
     hitMaterials,
     baseColors,
+    polygonCount: counts.polygons,
+    triangleCount: counts.triangles,
+    vertexCount: counts.vertexCount,
+    boneCount: counts.boneCount,
+    materialCount: counts.materialCount,
+    rendererCount: counts.rendererCount,
+    allocation: counts.allocation,
   };
 }
 
 /**
- * Updates an EnemyMeshRig's pose each frame (walking gait, hit flash, windup telegraph, and KO topple).
+ * Six-Direction Animation Controller for EnemyMeshRig:
+ * - Direction 01: Archetype-Distinct Idle Personality & Breathing
+ * - Direction 02: Velocity-Synchronized Locomotion, Accel/Decel & Turn Weight
+ * - Direction 03: Readable Combat Preparation, Execution & Special Abilities
+ * - Direction 04: 4-Way Directional Damage Flinch, Armor Impact & Weak-Point Reaction
+ * - Direction 05: Archetype-Specific Death Collapse & Destruction
+ * - Direction 06: Mini-Boss & Main Boss Intro + Phase Transition Presentation
  */
 export function updateEnemyMeshRig(
   rig: EnemyMeshRig,
   bot: EnemyBotState
 ): void {
-  rig.root.position.set(bot.x, bot.y, bot.z);
+  rig.root.position.set(bot.x, bot.y + bot.verticalOffset, bot.z);
   rig.root.rotation.y = bot.yaw;
 
-  // Hit flash white emissive response
+  const normArch =
+    bot.archetype === 'enforcer'
+      ? 'brute'
+      : bot.archetype === 'boss'
+      ? 'colossus'
+      : bot.archetype;
+
+  const baseScale =
+    bot.tier === 'boss'
+      ? 1.56
+      : bot.tier === 'miniboss'
+      ? 1.35
+      : normArch === 'brute'
+      ? 1.24
+      : normArch === 'commander'
+      ? 1.18
+      : normArch === 'shield'
+      ? 1.1
+      : normArch === 'rusher' || normArch === 'stalker' || normArch === 'leaper'
+      ? 0.93
+      : 1.0;
+
+  // Shield visibility matches shield durability
+  if (rig.shieldMesh) {
+    rig.shieldMesh.visible = bot.shieldHp > 0 && bot.alive;
+  }
+
+  // Breakable armor plates hide when armor is depleted
+  if (rig.armorMeshes.length > 0 && bot.maxArmorHp > 0) {
+    const armorIntact = bot.armorHp > 0 && bot.alive;
+    for (let i = 0; i < rig.armorMeshes.length; i++) {
+      rig.armorMeshes[i].visible = armorIntact;
+    }
+  }
+
+  // Sniper / Overseer aiming laser visibility during windup
+  if (rig.sniperLaser) {
+    rig.sniperLaser.visible = bot.alive && bot.attackState === 'windup';
+  }
+
+  // Exploder / Boss core animation (idle pulse vs rapid detonation warning)
+  if (rig.coreMesh && bot.alive) {
+    const isDetonationWarning =
+      normArch === 'exploder' &&
+      (bot.attackState === 'windup' || bot.attackState === 'execution');
+    const pulseRate = isDetonationWarning ? 32 : 5;
+    const pulseAmp = isDetonationWarning ? 0.34 : 0.08;
+    const pulse = 1 + Math.sin(bot.idleTime * pulseRate) * pulseAmp;
+    rig.coreMesh.scale.setScalar(pulse);
+    rig.coreMesh.rotation.y += isDetonationWarning ? 0.14 : 0.03;
+  }
+
+  // Weak-point flash feedback when struck
+  if (rig.weakPointMesh && bot.alive) {
+    const wpBoost = bot.weakPointFlashTimer > 0 ? 1.28 : 1.0;
+    rig.weakPointMesh.scale.setScalar(wpBoost);
+  }
+
+  // Hit flash, Armor metallic flash, Phase transition & Boss phase aura
   const isFlashing = bot.hitFlashTimer > 0;
+  const isArmorFlashing = bot.armorFlashTimer > 0;
+  const isPhaseTransitioning = bot.bossPhaseTransitionTimer > 0;
   for (let i = 0; i < rig.hitMaterials.length; i++) {
     const mat = rig.hitMaterials[i];
     if (isFlashing) {
       mat.emissive.setHex(0xffffff);
+      mat.emissiveIntensity = 0.85;
+    } else if (isArmorFlashing) {
+      mat.emissive.setHex(0x38bdf8);
+      mat.emissiveIntensity = 0.65;
+    } else if (isPhaseTransitioning) {
+      mat.emissive.setHex(0xfbbf24);
       mat.emissiveIntensity = 0.75;
-    } else if (bot.attackState === 'windup') {
-      mat.emissive.setHex(0xff3300);
-      mat.emissiveIntensity = 0.35;
+    } else if (bot.attackState === 'windup' || bot.attackState === 'execution') {
+      mat.emissive.setHex(normArch === 'exploder' ? 0xa3e635 : 0xff3300);
+      mat.emissiveIntensity = 0.45;
+    } else if ((bot.tier === 'boss' || bot.tier === 'miniboss') && bot.bossPhase >= 2) {
+      mat.emissive.setHex(bot.bossPhase === 3 ? 0xff0044 : 0xff5500);
+      mat.emissiveIntensity = bot.bossPhase === 3 ? 0.45 : 0.25;
     } else {
       mat.emissive.setHex(0x000000);
       mat.emissiveIntensity = 0;
@@ -764,41 +1427,188 @@ export function updateEnemyMeshRig(
   }
 
   // Telegraph ring visibility
-  if (bot.alive && bot.attackState === 'windup') {
+  if (
+    bot.alive &&
+    (bot.attackState === 'windup' ||
+      bot.attackState === 'execution' ||
+      bot.bossPhaseTransitionTimer > 0)
+  ) {
     rig.telegraphRing.visible = true;
-    const pulse = 1 + Math.sin(bot.attackTimer * 22) * 0.15;
+    const pulse = 1 + Math.sin(bot.attackTimer * 24) * 0.18;
     rig.telegraphRing.scale.setScalar(pulse);
   } else {
     rig.telegraphRing.visible = false;
   }
 
-  // KO topple animation when defeated
+  // DIRECTION 05: Archetype-Specific Death, Collapse & Destruction
   if (!bot.alive) {
-    const koProgress = 1 - Math.max(0, bot.koTimer / 0.42);
-    rig.bodyPivot.rotation.x = -koProgress * (Math.PI * 0.48);
-    rig.bodyPivot.position.y = -koProgress * 0.35;
+    const koProgress = Math.min(1, 1 - Math.max(0, bot.koTimer / 0.48));
+    rig.hipsPivot.rotation.set(0, 0, 0);
+    rig.torsoPivot.rotation.set(0, 0, 0);
+    rig.headPivot.rotation.set(0, 0, 0);
+
+    if (bot.deathStyle === 'headshot') {
+      rig.bodyPivot.rotation.x = -koProgress * (Math.PI * 0.56);
+      rig.bodyPivot.rotation.z = koProgress * 0.35;
+      rig.bodyPivot.position.y =
+        Math.sin(koProgress * Math.PI) * 0.18 - koProgress * 0.38;
+      rig.headMesh.scale.setScalar(Math.max(0.2, 1 - koProgress * 0.8));
+    } else if (bot.deathStyle === 'explosive') {
+      const pop =
+        koProgress < 0.3
+          ? 1 + koProgress * 1.1
+          : Math.max(0.05, 1.33 - (koProgress - 0.3) * 1.8);
+      rig.bodyPivot.scale.setScalar(baseScale * pop);
+      rig.bodyPivot.position.y = -koProgress * 0.45;
+    } else if (bot.deathStyle === 'runner') {
+      // Dynamic forward stumble & roll
+      rig.bodyPivot.rotation.x = koProgress * (Math.PI * 0.54);
+      rig.bodyPivot.rotation.z = -koProgress * 0.28;
+      rig.bodyPivot.position.y = -koProgress * 0.36;
+    } else if (
+      bot.deathStyle === 'heavy' ||
+      bot.deathStyle === 'miniboss' ||
+      bot.deathStyle === 'boss'
+    ) {
+      // Slow knee collapse followed by heavy ground impact
+      const kneeStage = Math.min(1, koProgress * 1.6);
+      const slamStage = Math.max(0, (koProgress - 0.4) / 0.6);
+      rig.leftLegPivot.rotation.x = -kneeStage * 0.85;
+      rig.rightLegPivot.rotation.x = -kneeStage * 0.85;
+      rig.bodyPivot.rotation.x = slamStage * (Math.PI * 0.46);
+      rig.bodyPivot.rotation.z = slamStage * 0.16;
+      rig.bodyPivot.position.y = -kneeStage * 0.24 - slamStage * 0.22;
+    } else {
+      // Normal humanoid loss of balance & collapse
+      rig.bodyPivot.rotation.x = -koProgress * (Math.PI * 0.48);
+      rig.bodyPivot.rotation.y = koProgress * 0.22;
+      rig.bodyPivot.position.y = -koProgress * 0.35;
+    }
     return;
   }
 
-  // Stagger tilt when hit
-  const staggerTilt = bot.staggerTimer > 0 ? -0.22 * (bot.staggerTimer / 0.14) : 0;
-  rig.bodyPivot.rotation.x = staggerTilt;
-  rig.bodyPivot.position.y = Math.abs(Math.sin(bot.walkPhase)) * 0.04;
+  // DIRECTION 06: Mini-Boss & Main Boss Intro + Phase Transition Presentation
+  const spawnProgress =
+    bot.spawnAnimTimer > 0 ? Math.max(0.1, 1 - bot.spawnAnimTimer / 0.35) : 1.0;
+  rig.bodyPivot.scale.setScalar(baseScale * spawnProgress);
+  rig.headMesh.scale.setScalar(1.0);
 
-  // Walking limb swing
+  if (bot.bossPhaseTransitionTimer > 0) {
+    const t = bot.bossPhaseTransitionTimer;
+    rig.torsoPivot.rotation.x = -0.28 * Math.sin(t * 8);
+    rig.leftArmPivot.rotation.x = -2.1;
+    rig.rightArmPivot.rotation.x = -2.1;
+    rig.headPivot.rotation.y = Math.sin(t * 12) * 0.32;
+    return;
+  }
+
+  if (bot.bossIntroTimer > 0) {
+    const introPhase = 1 - Math.min(1, bot.bossIntroTimer / 2.2);
+    rig.torsoPivot.rotation.x = Math.sin(introPhase * Math.PI) * -0.22;
+    rig.leftArmPivot.rotation.x = -1.6 * Math.sin(introPhase * Math.PI);
+    rig.rightArmPivot.rotation.x = -1.6 * Math.sin(introPhase * Math.PI);
+  }
+
+  // Distance-based Animation LOD (skip micro secondary bone breathing on distant LOD 2 enemies)
   const speed = Math.hypot(bot.vx, bot.vz);
-  const swingAmp = Math.min(speed / 5.0, 1.0) * 0.65;
+  const normSpeed = Math.min(1, speed / Math.max(1, bot.speed));
+
+  // DIRECTION 01: Idle, Personality & Character Presence
+  let idleLeanX = 0;
+  let idleRollZ = 0;
+  let idleHeadYaw = 0;
+  let idleBobY = 0;
+
+  if (bot.animLodLevel < 2) {
+    const t = bot.idleTime;
+    if (normArch === 'rusher' || normArch === 'stalker') {
+      // Restless forward lean & quick head scan
+      idleLeanX = 0.16 + Math.sin(t * 4.2) * 0.03;
+      idleHeadYaw = Math.sin(t * 2.8) * 0.18;
+      idleBobY = Math.abs(Math.sin(t * 4.2)) * 0.025;
+    } else if (normArch === 'leaper') {
+      // Coiled low crouch
+      idleLeanX = 0.24 + Math.sin(t * 3.5) * 0.04;
+      idleBobY = -0.08 + Math.sin(t * 3.5) * 0.02;
+    } else if (normArch === 'brute' || normArch === 'iron_warden' || normArch === 'colossus') {
+      // Heavy wide stance & slow deep breathing
+      idleLeanX = 0.05 + Math.sin(t * 1.6) * 0.035;
+      idleRollZ = Math.sin(t * 0.9) * 0.03;
+      idleBobY = Math.sin(t * 1.6) * 0.02;
+    } else if (normArch === 'exploder') {
+      // Subtle unstable vibration
+      idleLeanX = 0.08 + Math.sin(t * 14.0) * 0.02;
+      idleRollZ = Math.cos(t * 16.0) * 0.025;
+      idleHeadYaw = Math.sin(t * 9.0) * 0.1;
+    } else if (normArch === 'abomination' || normArch === 'brood_titan') {
+      // Asymmetrical creature posture
+      idleLeanX = 0.14 + Math.sin(t * 2.3) * 0.04;
+      idleRollZ = 0.08 + Math.sin(t * 1.9) * 0.045;
+      idleHeadYaw = Math.cos(t * 2.1) * 0.16;
+    } else {
+      // Controlled combat-ready breathing & occasional head scan
+      idleLeanX = Math.sin(t * 2.2) * 0.025;
+      idleHeadYaw = Math.sin(t * 1.3) * 0.1;
+      idleBobY = Math.sin(t * 2.2) * 0.015;
+    }
+  }
+
+  // DIRECTION 02: Velocity-Blended Locomotion, Acceleration Lean & Turn Weight
+  const runLeanX =
+    normSpeed *
+    bot.accelBlend *
+    (normArch === 'rusher' || normArch === 'leaper' ? 0.22 : 0.1);
+  const gaitBobY = Math.abs(Math.sin(bot.walkPhase)) * 0.048 * normSpeed;
+  const swingAmp = normSpeed * 0.72;
   const legSwing = Math.sin(bot.walkPhase) * swingAmp;
 
+  // DIRECTION 04: Directional Hit Flinch & Stagger
+  const staggerTilt =
+    bot.staggerTimer > 0 ? -0.26 * Math.min(1, bot.staggerTimer / 0.25) : 0;
+
+  rig.bodyPivot.rotation.x = staggerTilt + bot.flinchPitch + idleLeanX + runLeanX;
+  rig.bodyPivot.rotation.y = 0;
+  rig.bodyPivot.rotation.z = bot.flinchRoll + idleRollZ;
+  rig.bodyPivot.position.y =
+    (spawnProgress < 1 ? -(1 - spawnProgress) * 0.6 : 0) +
+    idleBobY * (1 - normSpeed) +
+    gaitBobY;
+
+  rig.headPivot.rotation.y = idleHeadYaw * (1 - normSpeed * 0.6);
   rig.leftLegPivot.rotation.x = legSwing;
   rig.rightLegPivot.rotation.x = -legSwing;
 
+  // DIRECTION 03: Combat, Attacks & Special Abilities
   if (bot.attackState === 'windup') {
-    // Raise weapon arm during attack telegraph
-    rig.rightArmPivot.rotation.x = -1.35;
-    rig.leftArmPivot.rotation.x = -0.85;
+    const windupRatio =
+      1 - Math.max(0, bot.attackTimer / Math.max(0.1, bot.windupDuration));
+    rig.torsoPivot.rotation.y = -0.22 * windupRatio;
+    rig.rightArmPivot.rotation.x = -1.1 - windupRatio * 0.55;
+    rig.leftArmPivot.rotation.x =
+      normArch === 'shield' || normArch === 'iron_warden'
+        ? -0.55
+        : -0.75 - windupRatio * 0.35;
+  } else if (bot.attackState === 'execution') {
+    // Active strike / fire frame pose
+    rig.torsoPivot.rotation.y = 0.28;
+    rig.torsoPivot.rotation.x = 0.16;
+    rig.rightArmPivot.rotation.x = -1.75;
+    rig.leftArmPivot.rotation.x =
+      normArch === 'shield' || normArch === 'iron_warden' ? -0.85 : -1.1;
+  } else if (bot.attackState === 'recover') {
+    rig.torsoPivot.rotation.y = 0;
+    rig.torsoPivot.rotation.x = 0.06;
+    rig.rightArmPivot.rotation.x = -0.35;
+    rig.leftArmPivot.rotation.x =
+      normArch === 'shield' || normArch === 'iron_warden' ? -0.4 : -0.25;
   } else {
-    rig.leftArmPivot.rotation.x = -legSwing * 0.7;
+    rig.torsoPivot.rotation.y = 0;
+    rig.torsoPivot.rotation.x = 0;
+    rig.leftArmPivot.rotation.x =
+      (normArch === 'shield' || normArch === 'iron_warden') && bot.shieldHp > 0
+        ? -0.48
+        : -legSwing * 0.7;
     rig.rightArmPivot.rotation.x = -0.55 + legSwing * 0.35;
   }
 }
+

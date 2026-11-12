@@ -5,30 +5,51 @@ import {
   AmmoPickupState,
   AssaultRifleTriangleBreakdown,
   EnemyArchetype,
+  EnemyBenchmarkScenarioResult,
   EnemyBotState,
+  EnemyPolygonValidationEntry,
   GameSettings,
   GameState,
   InspectionViewMode,
+  MapId,
+  MapValidationSummary,
+  MapVariantId,
+  NavigationManagerMetrics,
+  PlayerAnimationState,
+  PlayerLegsPolygonBreakdown,
+  PlayerUpgradesState,
   RevolverTriangleBreakdown,
   RunSummary,
+  ShopItemId,
+  ShotgunTriangleBreakdown,
+  SpawnDebugNodeInfo,
   WeaponId,
 } from '../game/types';
 import {
   WEAPON_SPECS,
+  applyDamageToPlayer,
   applyMouseLook,
   applyWeaponShot,
+  calculateShotgunPelletDamage,
   calculateWaveConfig,
   canFireWeapon,
   createEnemyBot,
   createInitialCameraState,
   createInitialPlayerState,
+  createInitialUpgradesState,
   createInitialWeaponProceduralState,
   createInitialWeaponRuntime,
+  createNavigationManagerState,
   damageEnemyBot,
+  purchaseShopItem,
+  resetPlayerForRespawn,
+  resetPooledEnemyBot,
+  runEnemyEcosystemBenchmarks,
   stepCameraProcedural,
   stepEnemiesAI,
   stepPlayerPhysics,
   stepWeaponProcedural,
+  triggerWeaponMelee,
   triggerWeaponReload,
   triggerWeaponSwitch,
 } from '../game/rules';
@@ -38,16 +59,33 @@ import {
   createWeaponRig,
 } from '../game/weapons';
 import {
+  FirstPersonLegsRig,
+  createFirstPersonLegsRig,
+  updateFirstPersonLegsRig,
+} from '../game/legs';
+import {
+  MAP_SPECS,
+  SpawnDebugVisualizerRig,
+  buildSpawnZoneDebugVisualizer,
+  selectValidatedMapSpawnPoint,
+  updateSpawnZoneDebugVisualizer,
+  validateAllMapsAndEnemyCompatibility,
+} from '../game/maps';
+import {
   EnemyMeshRig,
   buildArenaEnvironment,
   buildEnemyBotMesh,
+  logEnemyPolygonValidationReport,
   updateEnemyMeshRig,
+  validateAllEnemyPolygonBudgets,
 } from '../game/arena';
 import { audioEngine } from '../game/audio';
 
 export interface HudSnapshot {
   health: number;
   maxHealth: number;
+  armor: number;
+  maxArmor: number;
   activeWeapon: WeaponId;
   ammoInMag: number;
   reserveAmmo: number;
@@ -55,16 +93,44 @@ export interface HudSnapshot {
   reloadProgress: number;
   score: number;
   bestScore: number;
+  credits: number;
   wave: number;
+  waveTitle: string;
+  isBossWave: boolean;
   enemiesRemaining: number;
+  bossAlive: boolean;
+  bossName: string;
+  bossHp: number;
+  bossMaxHp: number;
+  bossPhase: 1 | 2 | 3;
+  killCombo: number;
+  bannerText: string;
+  bannerSubtext: string;
+  killFeedText: string;
+  pickupFeedText: string;
   arTriangles: number;
   revTriangles: number;
+  sgTriangles: number;
   arBreakdown: AssaultRifleTriangleBreakdown;
   revBreakdown: RevolverTriangleBreakdown;
+  sgBreakdown: ShotgunTriangleBreakdown;
   leftHandTriangles: number;
   rightHandTriangles: number;
+  legsBreakdown: PlayerLegsPolygonBreakdown;
+  playerAnimState: PlayerAnimationState;
+  activeMapId: MapId;
+  activeVariantId: MapVariantId;
+  spawnDebugNodes: SpawnDebugNodeInfo[];
+  mapValidationSummaries: MapValidationSummary[];
+  navManagerMetrics: NavigationManagerMetrics;
+  enemyPolygonValidation: EnemyPolygonValidationEntry[];
+  enemyBenchmarks: EnemyBenchmarkScenarioResult[];
   isAiming: boolean;
+  isCrouching: boolean;
+  isSliding: boolean;
   hurtFlash: number;
+  lastDamageAngle: number;
+  upgrades: PlayerUpgradesState;
 }
 
 export interface ScreenFloatingDamage {
@@ -79,11 +145,17 @@ export interface ScreenFloatingDamage {
 interface GameCanvasProps {
   gameState: GameState;
   settings: GameSettings;
+  selectedMap: MapId;
+  selectedVariant?: MapVariantId;
+  showSpawnDebug: boolean;
   inspectionView: InspectionViewMode;
   resetSignal: number;
+  shopOpen: boolean;
   onHudUpdate: (hud: HudSnapshot) => void;
   onPauseRequest: () => void;
+  onToggleShop: () => void;
   onGameOver: (summary: RunSummary) => void;
+  buyItemRef: React.MutableRefObject<((itemId: ShopItemId) => string) | null>;
   crosshairRef: React.RefObject<HTMLDivElement | null>;
   hitMarkerRef: React.RefObject<HTMLDivElement | null>;
   damageLayerRef: React.RefObject<HTMLDivElement | null>;
@@ -109,11 +181,17 @@ const MAX_DECALS = 16;
 export const GameCanvas: React.FC<GameCanvasProps> = ({
   gameState,
   settings,
+  selectedMap,
+  selectedVariant = 'VARIANT_A',
+  showSpawnDebug,
   inspectionView,
   resetSignal,
+  shopOpen,
   onHudUpdate,
   onPauseRequest,
+  onToggleShop,
   onGameOver,
+  buyItemRef,
   crosshairRef,
   hitMarkerRef,
   damageLayerRef,
@@ -123,11 +201,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   // Store latest props in refs so the 60fps loop never tears down the WebGL context
   const gameStateRef = useRef<GameState>(gameState);
   const settingsRef = useRef<GameSettings>(settings);
+  const selectedMapRef = useRef<MapId>(selectedMap);
+  const selectedVariantRef = useRef<MapVariantId>(selectedVariant);
+  const showSpawnDebugRef = useRef<boolean>(showSpawnDebug);
   const inspectionViewRef = useRef<InspectionViewMode>(inspectionView);
+  const shopOpenRef = useRef<boolean>(shopOpen);
   const onHudUpdateRef = useRef(onHudUpdate);
   const onPauseRequestRef = useRef(onPauseRequest);
+  const onToggleShopRef = useRef(onToggleShop);
   const onGameOverRef = useRef(onGameOver);
   const resetRunFnRef = useRef<(() => void) | null>(null);
+  const switchMapFnRef = useRef<((nextMap: MapId, nextVariant?: MapVariantId) => void) | null>(null);
 
   useEffect(() => {
     gameStateRef.current = gameState;
@@ -137,6 +221,30 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       }
     }
   }, [gameState]);
+
+  useEffect(() => {
+    showSpawnDebugRef.current = showSpawnDebug;
+  }, [showSpawnDebug]);
+
+  useEffect(() => {
+    if (
+      selectedMapRef.current !== selectedMap ||
+      selectedVariantRef.current !== selectedVariant
+    ) {
+      selectedMapRef.current = selectedMap;
+      selectedVariantRef.current = selectedVariant;
+      if (switchMapFnRef.current) {
+        switchMapFnRef.current(selectedMap, selectedVariant);
+      }
+    }
+  }, [selectedMap, selectedVariant]);
+
+  useEffect(() => {
+    shopOpenRef.current = shopOpen;
+    if (shopOpen && typeof document !== 'undefined' && document.pointerLockElement) {
+      document.exitPointerLock?.();
+    }
+  }, [shopOpen]);
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -150,8 +258,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   useEffect(() => {
     onHudUpdateRef.current = onHudUpdate;
     onPauseRequestRef.current = onPauseRequest;
+    onToggleShopRef.current = onToggleShop;
     onGameOverRef.current = onGameOver;
-  }, [onHudUpdate, onPauseRequest, onGameOver]);
+  }, [onHudUpdate, onPauseRequest, onToggleShop, onGameOver]);
 
   useEffect(() => {
     if (resetSignal > 0 && resetRunFnRef.current) {
@@ -264,6 +373,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     const weaponRig: WeaponRig = createWeaponRig();
     camera.add(weaponRig.root);
 
+    // First-Person Player Legs Rig (<= 99 polygons total, 7-bone hierarchy mounted on playerRoot)
+    const legsRig: FirstPersonLegsRig = createFirstPersonLegsRig();
+    playerRoot.add(legsRig.root);
+
     // Warm Key Light + Cool Hemisphere Fill
     const hemiLight = new THREE.HemisphereLight(0x8bb8e8, 0x262c36, 0.85);
     hemiLight.position.set(0, 30, 0);
@@ -292,9 +405,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     rimLight.position.set(-20, 14, -18);
     scene.add(rimLight);
 
-    // Build Low-Poly Arena Environment
-    const arenaData = buildArenaEnvironment();
+    // Build Low-Poly Arena Environment for the selected map
+    let arenaData = buildArenaEnvironment(selectedMapRef.current);
+    const initialMapSpec = MAP_SPECS[selectedMapRef.current] ?? MAP_SPECS.OUTPOST_01;
+    skyColor.setHex(initialMapSpec.skyColorHex);
+    scene.background = skyColor;
+    scene.fog = new THREE.FogExp2(initialMapSpec.skyColorHex, initialMapSpec.fogDensity);
     scene.add(arenaData.arenaGroup);
+
+    // Build 3D Wireframe Enemy Spawn Location Debug Visualizer (color-coded by Standard / Heavy / Boss)
+    let spawnDebugRig: SpawnDebugVisualizerRig = buildSpawnZoneDebugVisualizer(
+      selectedMapRef.current,
+      showSpawnDebugRef.current
+    );
+    scene.add(spawnDebugRig.root);
 
     // Pooled InstancedMesh Particle Ring Buffer (Zero GC inside loop)
     const particleGeom = new THREE.OctahedronGeometry(0.065, 0);
@@ -402,11 +526,28 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     let weaponsRuntime = createInitialWeaponRuntime();
     let cameraAnim = createInitialCameraState();
     let weaponAnim = createInitialWeaponProceduralState();
+    let upgrades = createInitialUpgradesState();
+    let navManager = createNavigationManagerState();
     let pickups: AmmoPickupState[] = arenaData.initialPickups.map((p) => ({ ...p }));
+    const enemyPolygonValidation = validateAllEnemyPolygonBudgets();
+    // Output automated startup polygon, triangle & vertex validation report to console
+    logEnemyPolygonValidationReport(enemyPolygonValidation);
+    const mapValidationSummaries = validateAllMapsAndEnemyCompatibility(
+      arenaData.colliders,
+      arenaData.ramps
+    );
+    const enemyBenchmarks = runEnemyEcosystemBenchmarks(
+      arenaData.colliders,
+      arenaData.ramps
+    );
 
     let score = 0;
     let bestScore = Number(localStorage.getItem('lowpoly_arena_best') || '0') || 0;
+    let credits = 100;
     let wave = 1;
+    let waveTitle = 'SECTOR 1 · RECON VANGUARD';
+    let isBossWave = false;
+    let waveSpawnQueue: EnemyArchetype[] = [];
     let kills = 0;
     let shotsFired = 0;
     let shotsHit = 0;
@@ -418,8 +559,22 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     let hitMarkerTimer = 0;
     let hitMarkerCritical = false;
 
+    let killCombo = 0;
+    let killComboTimer = 0;
+    let bannerText = '';
+    let bannerSubtext = '';
+    let bannerTimer = 0;
+    let killFeedText = '';
+    let killFeedTimer = 0;
+    let pickupFeedText = '';
+    let pickupFeedTimer = 0;
+
     const enemies: EnemyBotState[] = [];
     const enemyRigs = new Map<number, EnemyMeshRig>();
+    const enemyPool = new Map<
+      EnemyArchetype,
+      Array<{ bot: EnemyBotState; rig: EnemyMeshRig }>
+    >();
     const enemyHitboxMeshes: THREE.Mesh[] = [];
 
     const floatingDamages: Array<{
@@ -440,7 +595,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         const bot = enemies.find((b) => b.id === id);
         if (bot && bot.alive) {
           rig.bodyPivot.traverse((obj) => {
-            if ((obj as THREE.Mesh).isMesh) {
+            if ((obj as THREE.Mesh).isMesh && obj.visible) {
               enemyHitboxMeshes.push(obj as THREE.Mesh);
             }
           });
@@ -450,32 +605,52 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     const spawnBotInArena = (forcedPointIdx?: number) => {
       const waveCfg = calculateWaveConfig(wave);
-      const pts = arenaData.spawnPoints;
-      // Pick a spawn point away from the player
-      let chosen = pts[0];
-      if (forcedPointIdx !== undefined) {
-        chosen = pts[forcedPointIdx % pts.length];
-      } else {
-        const candidates = pts.filter(
-          (p) => Math.hypot(p.x - player.x, p.z - player.z) > 12
-        );
-        const pool = candidates.length > 0 ? candidates : pts;
-        chosen = pool[Math.floor(Math.random() * pool.length)];
-      }
+      const archetype: EnemyArchetype =
+        waveSpawnQueue.length > 0 ? waveSpawnQueue.shift()! : 'grunt';
 
-      const roll = Math.random();
-      let archetype: EnemyArchetype = 'rusher';
-      if (roll > 0.78 && wave >= 2) archetype = 'enforcer';
-      else if (roll > 0.45) archetype = 'ranger';
+      // Part 04.6 — Map-Specific Validated Spawn Point Selection per Enemy Category (A_Standard..G_Boss)
+      const chosen = selectValidatedMapSpawnPoint(
+        arenaData.mapId,
+        archetype,
+        player.x,
+        player.z,
+        arenaData.colliders,
+        enemies,
+        forcedPointIdx
+      );
 
       const id = nextBotId++;
-      const bot = createEnemyBot(id, archetype, chosen.x, chosen.y, chosen.z, waveCfg);
-      enemies.push(bot);
+      const bucket = enemyPool.get(archetype);
+      if (bucket && bucket.length > 0) {
+        const pooled = bucket.pop()!;
+        resetPooledEnemyBot(
+          pooled.bot,
+          id,
+          archetype,
+          chosen.x,
+          chosen.y,
+          chosen.z,
+          waveCfg
+        );
+        pooled.rig.root.visible = true;
+        pooled.rig.root.traverse((obj) => {
+          if ((obj as THREE.Mesh).isMesh) {
+            obj.userData.enemyId = id;
+            obj.visible = true;
+          }
+        });
+        updateEnemyMeshRig(pooled.rig, pooled.bot);
+        enemies.push(pooled.bot);
+        enemyRigs.set(id, pooled.rig);
+      } else {
+        const bot = createEnemyBot(id, archetype, chosen.x, chosen.y, chosen.z, waveCfg);
+        enemies.push(bot);
 
-      const rig = buildEnemyBotMesh(id, archetype);
-      updateEnemyMeshRig(rig, bot);
-      scene.add(rig.root);
-      enemyRigs.set(id, rig);
+        const rig = buildEnemyBotMesh(id, archetype);
+        updateEnemyMeshRig(rig, bot);
+        scene.add(rig.root);
+        enemyRigs.set(id, rig);
+      }
       rebuildEnemyHitboxes();
     };
 
@@ -490,9 +665,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       const aliveCount =
         enemies.filter((b) => b.alive).length + waveSpawnRemaining;
 
+      const activeBoss = enemies.find(
+        (b) =>
+          b.alive &&
+          (b.tier === 'boss' ||
+            b.tier === 'miniboss' ||
+            b.archetype === 'boss' ||
+            b.archetype === 'commander')
+      );
+
       onHudUpdateRef.current({
         health: Math.round(player.health),
         maxHealth: player.maxHealth,
+        armor: Math.round(player.armor),
+        maxArmor: player.maxArmor,
         activeWeapon: activeId,
         ammoInMag: runtime.ammoInMag,
         reserveAmmo: runtime.reserveAmmo,
@@ -500,24 +686,88 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         reloadProgress: weaponAnim.reloadProgress,
         score,
         bestScore,
+        credits,
         wave,
+        waveTitle,
+        isBossWave,
         enemiesRemaining: aliveCount,
+        bossAlive: Boolean(activeBoss),
+        bossName: activeBoss ? activeBoss.name : '',
+        bossHp: activeBoss ? activeBoss.hp : 0,
+        bossMaxHp: activeBoss ? activeBoss.maxHp : 1,
+        bossPhase: activeBoss ? activeBoss.bossPhase : 1,
+        killCombo,
+        bannerText: bannerTimer > 0 ? bannerText : '',
+        bannerSubtext: bannerTimer > 0 ? bannerSubtext : '',
+        killFeedText: killFeedTimer > 0 ? killFeedText : '',
+        pickupFeedText: pickupFeedTimer > 0 ? pickupFeedText : '',
         arTriangles: weaponRig.arTriangleCount,
         revTriangles: weaponRig.revTriangleCount,
+        sgTriangles: weaponRig.sgTriangleCount,
         arBreakdown: weaponRig.arBreakdown,
         revBreakdown: weaponRig.revBreakdown,
+        sgBreakdown: weaponRig.sgBreakdown,
         leftHandTriangles: weaponRig.leftHandTriangleCount,
         rightHandTriangles: weaponRig.rightHandTriangleCount,
+        legsBreakdown: legsRig.breakdown,
+        playerAnimState: player.animState,
+        activeMapId: arenaData.mapId,
+        activeVariantId: selectedVariantRef.current,
+        spawnDebugNodes: spawnDebugRig.nodes,
+        mapValidationSummaries,
+        navManagerMetrics: {
+          closeBandCount: navManager.closeBandCount,
+          mediumBandCount: navManager.mediumBandCount,
+          distantBandCount: navManager.distantBandCount,
+          pathsUpdatedLastStep: navManager.pathsUpdatedLastStep,
+          stuckRecoveriesTriggered: navManager.stuckRecoveriesTriggered,
+          batchCursor: navManager.batchCursor,
+        },
+        enemyPolygonValidation,
+        enemyBenchmarks,
         isAiming: player.isAiming || weaponAnim.adsBlend > 0.5,
+        isCrouching: player.isCrouching || player.crouchBlend > 0.5,
+        isSliding: player.isSliding,
         hurtFlash: player.hurtFlashTimer,
+        lastDamageAngle: player.lastDamageAngle,
+        upgrades: { ...upgrades },
       });
+    };
+
+    buyItemRef.current = (itemId: ShopItemId): string => {
+      const res = purchaseShopItem(
+        itemId,
+        credits,
+        player,
+        weaponsRuntime,
+        upgrades
+      );
+      if (res.success) {
+        credits = res.newCredits;
+        audioEngine.playShopPurchase();
+        pickupFeedText = res.message;
+        pickupFeedTimer = 2.4;
+        syncHud(true);
+      } else {
+        audioEngine.playEmptyClick();
+      }
+      return res.message;
     };
 
     const startWave = (targetWave: number) => {
       wave = targetWave;
       const cfg = calculateWaveConfig(wave);
-      waveSpawnRemaining = cfg.totalEnemies;
+      waveTitle = cfg.title;
+      isBossWave = cfg.isBossWave;
+      waveSpawnQueue = [...cfg.spawnPool];
+      waveSpawnRemaining = waveSpawnQueue.length;
       spawnCooldown = 0.25;
+
+      bannerText = cfg.isBossWave ? `WARNING · WAVE ${wave}` : `WAVE ${wave}`;
+      bannerSubtext = cfg.title;
+      bannerTimer = 2.8;
+      audioEngine.playWaveStart(cfg.isBossWave);
+
       // Spawn 4 initial bots including one right in the central combat lane
       const initialCount = Math.min(4, waveSpawnRemaining);
       for (let i = 0; i < initialCount; i++) {
@@ -527,34 +777,81 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     };
 
     const resetRun = () => {
-      // Remove existing enemy meshes
-      enemyRigs.forEach((rig) => {
-        scene.remove(rig.root);
-      });
+      // Return active enemy meshes to pool and hide them
+      for (let i = 0; i < enemies.length; i++) {
+        const bot = enemies[i];
+        const rig = enemyRigs.get(bot.id);
+        if (rig) {
+          rig.root.visible = false;
+          const bucket = enemyPool.get(bot.archetype) || [];
+          bucket.push({ bot, rig });
+          enemyPool.set(bot.archetype, bucket);
+        }
+      }
       enemyRigs.clear();
       enemies.length = 0;
       enemyHitboxMeshes.length = 0;
       floatingDamages.length = 0;
 
-      player = createInitialPlayerState();
-      weaponsRuntime = createInitialWeaponRuntime();
-      cameraAnim = createInitialCameraState();
-      weaponAnim = createInitialWeaponProceduralState();
+      resetPlayerForRespawn(player, weaponsRuntime, cameraAnim, weaponAnim);
+      upgrades = createInitialUpgradesState();
+      navManager = createNavigationManagerState();
       pickups = arenaData.initialPickups.map((p) => ({ ...p }));
 
       score = 0;
+      credits = 100;
       kills = 0;
       shotsFired = 0;
       shotsHit = 0;
       hitstopTimer = 0;
       muzzleFlashTimer = 0;
       hitMarkerTimer = 0;
+      killCombo = 0;
+      killComboTimer = 0;
+      killFeedTimer = 0;
+      pickupFeedTimer = 0;
 
       startWave(1);
+      stepEnemiesAI(
+        enemies,
+        player,
+        arenaData.colliders,
+        arenaData.ramps,
+        0.001,
+        navManager
+      );
       syncHud(true);
     };
 
+    const switchMap = (nextMap: MapId, nextVariant: MapVariantId = selectedVariantRef.current) => {
+      const mapChanged = arenaData.mapId !== nextMap;
+      if (mapChanged) {
+        scene.remove(arenaData.arenaGroup);
+        scene.remove(spawnDebugRig.root);
+        arenaData = buildArenaEnvironment(nextMap);
+        spawnDebugRig = buildSpawnZoneDebugVisualizer(
+          nextMap,
+          showSpawnDebugRef.current
+        );
+        scene.add(arenaData.arenaGroup);
+        scene.add(spawnDebugRig.root);
+      }
+      const spec = MAP_SPECS[nextMap] ?? MAP_SPECS.OUTPOST_01;
+      const vSpec = spec.variants?.[nextVariant] ?? spec.variants?.VARIANT_A;
+      const targetSkyHex = vSpec ? vSpec.skyColorHex : spec.skyColorHex;
+      const targetFog = vSpec ? vSpec.fogDensity : spec.fogDensity;
+      skyColor.setHex(targetSkyHex);
+      scene.background = skyColor;
+      scene.fog = new THREE.FogExp2(targetSkyHex, targetFog);
+      if (mapChanged) {
+        resetRun();
+      } else {
+        syncHud(true);
+      }
+    };
+
     resetRunFnRef.current = resetRun;
+    switchMapFnRef.current = switchMap;
 
     // Initialize Wave 1 right away so Title Screen tour and ?autostart=1 have active bots
     resetRun();
@@ -592,6 +889,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         return;
       }
 
+      if (e.code === 'KeyB') {
+        e.preventDefault();
+        audioEngine.playUiClick();
+        onToggleShopRef.current();
+        return;
+      }
+
       if (!keysHeld.has(e.code)) {
         keysJustPressed.add(e.code);
       }
@@ -607,6 +911,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           audioEngine.playWeaponSwitch();
           syncHud(true);
         }
+      } else if (e.code === 'Digit3') {
+        if (triggerWeaponSwitch(weaponAnim, 'shotgun')) {
+          audioEngine.playWeaponSwitch();
+          syncHud(true);
+        }
       } else if (e.code === 'KeyR') {
         const activeId = weaponAnim.activeWeapon;
         if (
@@ -619,6 +928,23 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           audioEngine.playReload(activeId);
           syncHud(true);
         }
+      } else if (e.code === 'KeyV' || e.code === 'KeyF') {
+        if (triggerWeaponMelee(weaponAnim)) {
+          audioEngine.playWeaponSwitch();
+          syncHud(true);
+        }
+      }
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      if (gameStateRef.current !== 'playing') return;
+      const order: WeaponId[] = ['assault_rifle', 'revolver', 'shotgun'];
+      const curIdx = order.indexOf(weaponAnim.queuedWeapon);
+      const dir = e.deltaY > 0 ? 1 : -1;
+      const nextWeapon = order[(curIdx + dir + order.length) % order.length];
+      if (triggerWeaponSwitch(weaponAnim, nextWeapon)) {
+        audioEngine.playWeaponSwitch();
+        syncHud(true);
       }
     };
 
@@ -716,6 +1042,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('wheel', onWheel, { passive: true });
     window.addEventListener('contextmenu', onContextMenu);
     window.addEventListener('blur', onWindowBlur);
 
@@ -731,18 +1058,22 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       const activeId = weaponAnim.activeWeapon;
       const spec = WEAPON_SPECS[activeId];
       const runtime = weaponsRuntime[activeId];
+      const isShotgun = activeId === 'shotgun';
+      const isRevolver = activeId === 'revolver';
 
       applyWeaponShot(weaponAnim, cameraAnim, runtime, spec);
       shotsFired++;
       audioEngine.playShoot(activeId);
 
-      // Muzzle flash scale & duration (Revolver larger and brighter than Assault Rifle)
+      // Muzzle flash scale & duration (Shotgun & Revolver larger and brighter than Assault Rifle)
       const anchor =
         activeId === 'assault_rifle'
           ? weaponRig.arMuzzlePoint
+          : isShotgun
+          ? weaponRig.sgMuzzlePoint
           : weaponRig.revMuzzlePoint;
       weaponRig.muzzleFlashMesh.position.copy(anchor.position);
-      const flashScale = activeId === 'revolver' ? 1.55 : 0.95;
+      const flashScale = isShotgun ? 1.85 : isRevolver ? 1.55 : 0.95;
       weaponRig.muzzleFlashMesh.scale.set(
         flashScale,
         flashScale,
@@ -751,154 +1082,292 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       weaponRig.muzzleFlashMesh.rotation.z = Math.random() * Math.PI * 2;
       weaponRig.muzzleFlashMesh.visible = true;
       weaponRig.muzzleLight.position.copy(anchor.position);
-      weaponRig.muzzleLight.intensity = activeId === 'revolver' ? 3.8 : 2.1;
-      muzzleFlashTimer = activeId === 'revolver' ? 0.065 : 0.042;
+      weaponRig.muzzleLight.intensity = isShotgun ? 4.4 : isRevolver ? 3.8 : 2.1;
+      muzzleFlashTimer = isShotgun ? 0.075 : isRevolver ? 0.065 : 0.042;
 
       // Update world matrices before raycasting
       camera.updateMatrixWorld(true);
       anchor.getWorldPosition(muzzleWorldPos);
 
-      // Section 20.5: Consistent Camera & Muzzle Alignment with Hip-Fire / ADS Spread
-      const excessSpread = Math.max(0, weaponAnim.crosshairSpread - spec.spreadBase);
-      const spreadNdc =
-        excessSpread * 0.0012 * (1 - weaponAnim.adsBlend * 0.85);
-      const aimX = (Math.random() - 0.5) * spreadNdc;
-      const aimY = (Math.random() - 0.5) * spreadNdc;
-      screenCenter.set(aimX, aimY);
-
-      raycaster.setFromCamera(screenCenter, camera);
       const targets: THREE.Object3D[] = [
         ...enemyHitboxMeshes,
         ...arenaData.shootableMeshes,
       ];
-      const intersects = raycaster.intersectObjects(targets, false);
 
-      if (intersects.length > 0) {
-        const hit = intersects[0];
-        hitPoint.copy(hit.point);
-        if (hit.face) {
-          hitNormal
-            .copy(hit.face.normal)
-            .transformDirection(hit.object.matrixWorld)
-            .normalize();
+      // Multi-pellet close-range spread for Shotgun (8 pellets) vs single ray for AR/Revolver
+      const pelletCount = isShotgun ? spec.pelletCount ?? 8 : 1;
+      const excessSpread = Math.max(0, weaponAnim.crosshairSpread - spec.spreadBase);
+      const baseSpreadNdc = isShotgun
+        ? (0.048 + excessSpread * 0.0014) * (1 - weaponAnim.adsBlend * 0.42)
+        : excessSpread * 0.0012 * (1 - weaponAnim.adsBlend * 0.85);
+
+      let registeredShotHit = false;
+      let anySurfaceHit = false;
+      let surfaceMatType: 'concrete' | 'metal' | 'accent' = 'concrete';
+
+      for (let pIdx = 0; pIdx < pelletCount; pIdx++) {
+        let aimX = 0;
+        let aimY = 0;
+        if (isShotgun) {
+          // Center pellet + 7-pellet ring pattern with slight organic jitter
+          if (pIdx === 0) {
+            aimX = (Math.random() - 0.5) * baseSpreadNdc * 0.25;
+            aimY = (Math.random() - 0.5) * baseSpreadNdc * 0.25;
+          } else {
+            const ringAngle =
+              ((pIdx - 1) / Math.max(1, pelletCount - 1)) * Math.PI * 2 +
+              (Math.random() - 0.5) * 0.35;
+            const ringRadius = baseSpreadNdc * (0.55 + Math.random() * 0.45);
+            aimX = Math.cos(ringAngle) * ringRadius;
+            aimY = Math.sin(ringAngle) * ringRadius;
+          }
         } else {
-          hitNormal.set(0, 1, 0);
+          aimX = (Math.random() - 0.5) * baseSpreadNdc;
+          aimY = (Math.random() - 0.5) * baseSpreadNdc;
         }
 
-        // Set tracer line from muzzle to impact
-        const posAttr = tracerGeom.attributes.position as THREE.BufferAttribute;
-        posAttr.setXYZ(0, muzzleWorldPos.x, muzzleWorldPos.y - 0.02, muzzleWorldPos.z);
-        posAttr.setXYZ(1, hitPoint.x, hitPoint.y, hitPoint.z);
-        posAttr.needsUpdate = true;
-        tracerMat.opacity = activeId === 'revolver' ? 0.85 : 0.55;
-        tracerTimer = 0.045;
+        screenCenter.set(aimX, aimY);
+        raycaster.setFromCamera(screenCenter, camera);
+        const intersects = raycaster.intersectObjects(targets, false);
 
-        const enemyId = hit.object.userData.enemyId as number | undefined;
-        if (enemyId !== undefined) {
-          const bot = enemies.find((b) => b.id === enemyId && b.alive);
-          if (bot) {
-            shotsHit++;
-            const isCrit = Boolean(hit.object.userData.isHead);
-            const rawDmg =
-              spec.damage * (isCrit ? spec.headshotMultiplier : 1.0);
-            const { killed, damageApplied } = damageEnemyBot(
-              bot,
-              rawDmg,
-              player.x,
-              player.z
-            );
+        if (intersects.length > 0) {
+          const hit = intersects[0];
+          hitPoint.copy(hit.point);
+          if (hit.face) {
+            hitNormal
+              .copy(hit.face.normal)
+              .transformDirection(hit.object.matrixWorld)
+              .normalize();
+          } else {
+            hitNormal.set(0, 1, 0);
+          }
 
-            // Trigger hit marker
-            hitMarkerTimer = 0.16;
-            hitMarkerCritical = isCrit;
+          if (pIdx === 0) {
+            // Set primary tracer line from muzzle to impact
+            const posAttr = tracerGeom.attributes.position as THREE.BufferAttribute;
+            posAttr.setXYZ(0, muzzleWorldPos.x, muzzleWorldPos.y - 0.02, muzzleWorldPos.z);
+            posAttr.setXYZ(1, hitPoint.x, hitPoint.y, hitPoint.z);
+            posAttr.needsUpdate = true;
+            tracerMat.opacity = isShotgun || isRevolver ? 0.85 : 0.55;
+            tracerTimer = 0.045;
+          }
 
-            // Spawn hit sparks on enemy
+          const enemyId = hit.object.userData.enemyId as number | undefined;
+          if (enemyId !== undefined) {
+            const bot = enemies.find((b) => b.id === enemyId && b.alive);
+            if (bot) {
+              if (!registeredShotHit) {
+                shotsHit++;
+                registeredShotHit = true;
+              }
+              const isHead = Boolean(hit.object.userData.isHead);
+              const isWeakPoint = Boolean(hit.object.userData.isWeakPoint);
+              const isCrit = isHead || isWeakPoint;
+              const hitShield = Boolean(hit.object.userData.isShield);
+              const hitArmor = Boolean(hit.object.userData.isArmor);
+
+              const rawDmg = isShotgun
+                ? calculateShotgunPelletDamage(
+                    spec.damage,
+                    hit.distance,
+                    spec.effectiveRange ?? 16,
+                    isHead,
+                    spec.headshotMultiplier,
+                    upgrades.damageMultiplier
+                  )
+                : spec.damage *
+                  upgrades.damageMultiplier *
+                  (isHead ? spec.headshotMultiplier : 1.0);
+
+              const {
+                killed,
+                damageApplied,
+                shieldHit,
+                shieldBroken,
+                armorHit,
+                armorBroken,
+              } = damageEnemyBot(bot, rawDmg, player.x, player.z, {
+                isHeadshot: isHead,
+                isWeakPoint,
+                hitShield,
+                hitArmor,
+              });
+
+              // Trigger hit marker
+              hitMarkerTimer = 0.16;
+              hitMarkerCritical =
+                hitMarkerCritical || (isCrit && !shieldHit && !armorHit);
+
+              if (shieldHit) {
+                if (shieldBroken) {
+                  audioEngine.playShieldBreak();
+                  killFeedText = 'SHIELD SHATTERED · +40 SCORE';
+                  killFeedTimer = 1.8;
+                  score += 40;
+                } else if (pIdx === 0) {
+                  audioEngine.playShieldHit();
+                }
+                spawnParticleBurst(
+                  hitPoint.x,
+                  hitPoint.y,
+                  hitPoint.z,
+                  hitNormal.x,
+                  hitNormal.y,
+                  hitNormal.z,
+                  shieldBroken ? 10 : 4,
+                  0x38bdf8,
+                  5.4,
+                  shieldBroken ? 1.35 : 0.9
+                );
+              } else if (armorHit) {
+                if (armorBroken) {
+                  audioEngine.playShieldBreak();
+                  killFeedText = 'ARMOR PLATING SHATTERED · +30 SCORE';
+                  killFeedTimer = 1.8;
+                  score += 30;
+                } else if (pIdx === 0) {
+                  audioEngine.playShieldHit();
+                }
+                spawnParticleBurst(
+                  hitPoint.x,
+                  hitPoint.y,
+                  hitPoint.z,
+                  hitNormal.x,
+                  hitNormal.y,
+                  hitNormal.z,
+                  armorBroken ? 8 : 4,
+                  0x94a3b8,
+                  4.8,
+                  armorBroken ? 1.25 : 0.85
+                );
+              } else {
+                // Spawn hit sparks on enemy
+                spawnParticleBurst(
+                  hitPoint.x,
+                  hitPoint.y,
+                  hitPoint.z,
+                  hitNormal.x,
+                  hitNormal.y,
+                  hitNormal.z,
+                  isShotgun ? 4 : isCrit ? 12 : 7,
+                  isCrit ? 0xffd166 : 0xff5533,
+                  4.8,
+                  isCrit ? 1.25 : 0.95
+                );
+              }
+
+              // Floating damage number
+              floatingDamages.push({
+                id: nextDamageId++,
+                x: hitPoint.x + (Math.random() - 0.5) * 0.28,
+                y: hitPoint.y + 0.2,
+                z: hitPoint.z,
+                amount: damageApplied,
+                critical: isCrit && !shieldHit && !armorHit,
+                timer: 0.65,
+                maxTimer: 0.65,
+              });
+
+              if (killed && !bot.rewardGranted) {
+                bot.rewardGranted = true;
+                kills++;
+                killCombo++;
+                killComboTimer = 3.8;
+
+                const comboBonus = Math.min(killCombo - 1, 5) * 25;
+                const killPoints =
+                  bot.scoreReward * (isCrit ? 1.5 : 1.0) + comboBonus;
+                score += Math.round(killPoints);
+                credits += bot.creditReward + (isCrit ? 10 : 0);
+
+                if (score > bestScore) {
+                  bestScore = score;
+                  localStorage.setItem('lowpoly_arena_best', String(bestScore));
+                }
+
+                const comboLabel =
+                  killCombo >= 4
+                    ? 'MEGA KILL'
+                    : killCombo === 3
+                    ? 'TRIPLE KILL'
+                    : killCombo === 2
+                    ? 'DOUBLE KILL'
+                    : isHead
+                    ? 'HEADSHOT ELIMINATION'
+                    : isWeakPoint
+                    ? 'WEAK-POINT CRITICAL KILL'
+                    : `${bot.name} ELIMINATED`;
+
+                killFeedText = `${comboLabel} · +${bot.creditReward} CR`;
+                killFeedTimer = 2.1;
+
+                if (killCombo >= 2) {
+                  audioEngine.playKillCombo(killCombo);
+                } else {
+                  audioEngine.playEnemyDeath();
+                }
+
+                rebuildEnemyHitboxes();
+                if (
+                  isCrit ||
+                  isRevolver ||
+                  isShotgun ||
+                  bot.tier === 'boss' ||
+                  bot.tier === 'miniboss'
+                ) {
+                  hitstopTimer = 0.04;
+                }
+                spawnParticleBurst(
+                  bot.x,
+                  bot.y + 1.1,
+                  bot.z,
+                  0,
+                  1,
+                  0,
+                  bot.tier === 'boss' ? 24 : bot.tier === 'miniboss' ? 20 : 16,
+                  bot.archetype === 'exploder' ? 0xa3e635 : 0xff6b35,
+                  5.8,
+                  bot.tier === 'boss' ? 1.7 : 1.35
+                );
+              } else if (!shieldHit && !armorHit && pIdx === 0) {
+                score += isCrit ? 25 : 15;
+                audioEngine.playEnemyHit(isCrit);
+              }
+            }
+          } else {
+            // Hit arena surface (concrete or metal)
+            const matType =
+              (hit.object.userData.materialType as 'concrete' | 'metal' | 'accent') ||
+              'concrete';
+            anySurfaceHit = true;
+            surfaceMatType = matType;
+
+            const sparkColor =
+              matType === 'metal' || matType === 'accent' ? 0xffb703 : 0x94a3b8;
             spawnParticleBurst(
-              hitPoint.x,
-              hitPoint.y,
-              hitPoint.z,
+              hitPoint.x + hitNormal.x * 0.03,
+              hitPoint.y + hitNormal.y * 0.03,
+              hitPoint.z + hitNormal.z * 0.03,
               hitNormal.x,
               hitNormal.y,
               hitNormal.z,
-              isCrit ? 12 : 7,
-              isCrit ? 0xffd166 : 0xff5533,
-              4.8,
-              isCrit ? 1.25 : 0.95
+              isShotgun ? 3 : matType === 'metal' ? 8 : 5,
+              sparkColor,
+              matType === 'metal' ? 5.2 : 3.1,
+              0.85
             );
 
-            // Floating damage number
-            floatingDamages.push({
-              id: nextDamageId++,
-              x: hitPoint.x + (Math.random() - 0.5) * 0.25,
-              y: hitPoint.y + 0.2,
-              z: hitPoint.z,
-              amount: damageApplied,
-              critical: isCrit,
-              timer: 0.65,
-              maxTimer: 0.65,
-            });
-
-            if (killed) {
-              kills++;
-              const killPoints = (isCrit ? 150 : 100) * wave;
-              score += killPoints;
-              if (score > bestScore) {
-                bestScore = score;
-                localStorage.setItem('lowpoly_arena_best', String(bestScore));
-              }
-              audioEngine.playEnemyDeath();
-              rebuildEnemyHitboxes();
-              // Brief 35ms hitstop on heavy/critical kills
-              if (isCrit || activeId === 'revolver') {
-                hitstopTimer = 0.038;
-              }
-              spawnParticleBurst(
-                bot.x,
-                bot.y + 1.1,
-                bot.z,
-                0,
-                1,
-                0,
-                16,
-                0xff6b35,
-                5.6,
-                1.35
-              );
-            } else {
-              score += isCrit ? 25 : 15;
-              audioEngine.playEnemyHit(isCrit);
-            }
+            const decal = decalMeshes[decalHead];
+            decalHead = (decalHead + 1) % MAX_DECALS;
+            decal.visible = true;
+            decal.position.copy(hitPoint).addScaledVector(hitNormal, 0.015);
+            decal.lookAt(hitPoint.clone().add(hitNormal));
           }
-        } else {
-          // Hit arena surface (concrete or metal)
-          const matType =
-            (hit.object.userData.materialType as 'concrete' | 'metal' | 'accent') ||
-            'concrete';
-          audioEngine.playSurfaceImpact(matType);
-
-          // Spawn surface particles (bright sparks on metal, dust on concrete)
-          const sparkColor =
-            matType === 'metal' || matType === 'accent' ? 0xffb703 : 0x94a3b8;
-          spawnParticleBurst(
-            hitPoint.x + hitNormal.x * 0.03,
-            hitPoint.y + hitNormal.y * 0.03,
-            hitPoint.z + hitNormal.z * 0.03,
-            hitNormal.x,
-            hitNormal.y,
-            hitNormal.z,
-            matType === 'metal' ? 8 : 5,
-            sparkColor,
-            matType === 'metal' ? 5.2 : 3.1,
-            0.85
-          );
-
-          // Place impact decal
-          const decal = decalMeshes[decalHead];
-          decalHead = (decalHead + 1) % MAX_DECALS;
-          decal.visible = true;
-          decal.position.copy(hitPoint).addScaledVector(hitNormal, 0.015);
-          decal.lookAt(hitPoint.clone().add(hitNormal));
         }
+      }
+
+      if (anySurfaceHit && !registeredShotHit) {
+        audioEngine.playSurfaceImpact(surfaceMatType);
       }
 
       // Auto-reload if magazine reaches 0 and reserve ammo exists
@@ -959,8 +1428,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       const state = gameStateRef.current;
 
       if (state === 'title') {
-        // Live World Camera Tour around the arena on the Title Screen
         weaponRig.root.visible = false;
+        legsRig.root.visible = false;
+        updateSpawnZoneDebugVisualizer(
+          spawnDebugRig,
+          dt,
+          showSpawnDebugRef.current
+        );
         playerRoot.position.set(0, 0, 0);
         playerRoot.rotation.set(0, 0, 0);
         baseCameraPos.position.set(0, 0, 0);
@@ -981,7 +1455,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         camera.position.set(camX, 6.2 + Math.sin(titleOrbitAngle * 2) * 0.8, camZ);
         camera.lookAt(0, 1.8, 0);
 
-        // Animate pickups gently on title screen
         for (let i = 0; i < pickups.length; i++) {
           const p = pickups[i];
           const mesh = arenaData.pickupMeshes[i];
@@ -991,9 +1464,24 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         }
       } else if (state === 'playing') {
         weaponRig.root.visible = true;
+        legsRig.root.visible = inspectionViewRef.current === 'off';
+        updateSpawnZoneDebugVisualizer(
+          spawnDebugRig,
+          dt,
+          showSpawnDebugRef.current
+        );
 
-        // Hitstop timer pauses simulation physics briefly on heavy kills while keeping rendering & shake live
-        const simDt = hitstopTimer > 0 ? 0 : dt;
+        // Tick HUD notification timers
+        if (bannerTimer > 0) bannerTimer = Math.max(0, bannerTimer - dt);
+        if (killFeedTimer > 0) killFeedTimer = Math.max(0, killFeedTimer - dt);
+        if (pickupFeedTimer > 0) pickupFeedTimer = Math.max(0, pickupFeedTimer - dt);
+        if (killComboTimer > 0) {
+          killComboTimer = Math.max(0, killComboTimer - dt);
+          if (killComboTimer <= 0) killCombo = 0;
+        }
+
+        // Hitstop timer pauses simulation physics briefly on heavy kills
+        const simDt = hitstopTimer > 0 || shopOpenRef.current ? 0 : dt;
         if (hitstopTimer > 0) {
           hitstopTimer = Math.max(0, hitstopTimer - dt);
         }
@@ -1005,11 +1493,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           (keysHeld.has('KeyD') || keysHeld.has('ArrowRight') ? 1 : 0) -
           (keysHeld.has('KeyA') || keysHeld.has('ArrowLeft') ? 1 : 0);
         const sprintHeld = keysHeld.has('ShiftLeft') || keysHeld.has('ShiftRight');
+        const crouchHeld =
+          keysHeld.has('KeyC') ||
+          keysHeld.has('ControlLeft') ||
+          keysHeld.has('ControlRight');
         const jumpJustPressed = keysJustPressed.has('Space');
         const jumpHeld = keysHeld.has('Space');
 
         if (simDt > 0) {
-          // 1. Step Player Physics & Arena Collisions
+          // 1. Step Player Physics & Arena Collisions (including Crouching & Tactical Sliding)
           const moveRes = stepPlayerPhysics(
             player,
             {
@@ -1019,6 +1511,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
               jumpJustPressed,
               jumpHeld,
               aimHeld: rightMouseHeld,
+              crouchHeld,
             },
             arenaData.colliders,
             arenaData.ramps,
@@ -1028,6 +1521,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           if (moveRes.steppedFoot) {
             audioEngine.playFootstep(player.isSprinting);
           }
+          if (moveRes.slideStarted) {
+            audioEngine.playJump();
+          }
           if (moveRes.jumped) {
             audioEngine.playJump();
           }
@@ -1035,20 +1531,87 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             audioEngine.playLand(moveRes.landedVelocity);
           }
 
-          // 2. Step Weapon Procedural Animations & State Machine
+          // 2. Step Weapon Procedural Animations & State Machine (scaled by reload upgrade)
           const weapRes = stepWeaponProcedural(
             weaponAnim,
             weaponsRuntime,
             player,
             rightInput,
-            simDt,
+            simDt * (weaponAnim.phase === 'reloading' ? upgrades.reloadSpeedMultiplier : 1),
             settingsRef.current.weaponSwayIntensity
           );
+          if (weapRes.shellInserted) {
+            audioEngine.playShotgunShellInsert();
+            syncHud(true);
+          }
+          if (weapRes.pumpCycled) {
+            audioEngine.playShotgunPump();
+          }
           if (weapRes.reloadCompleted || weapRes.switchedTo) {
             syncHud(true);
           }
 
-          // 3. Handle Firing Input (Automatic for Assault Rifle, Semi-Auto for Revolver)
+          // Handle 5-Stage Melee Contact Frame (`weapRes.meleeHitTriggered`)
+          if (weapRes.meleeHitTriggered) {
+            const lookDirX = -Math.sin(player.yaw);
+            const lookDirZ = -Math.cos(player.yaw);
+            let hitAnyMelee = false;
+            for (let i = 0; i < enemies.length; i++) {
+              const bot = enemies[i];
+              if (!bot.alive) continue;
+              const dx = bot.x - player.x;
+              const dz = bot.z - player.z;
+              const dist = Math.hypot(dx, dz);
+              if (dist <= 3.1) {
+                const dot = (dx / (dist || 1)) * lookDirX + (dz / (dist || 1)) * lookDirZ;
+                if (dot >= 0.35 || dist <= 1.45) {
+                  const meleeDmg = Math.round(65 * upgrades.damageMultiplier);
+                  const res = damageEnemyBot(bot, meleeDmg, player.x, player.z, {
+                    isHeadshot: false,
+                    isWeakPoint: false,
+                    hitShield: false,
+                    hitArmor: false,
+                  });
+                  // Knock enemy backward on melee strike
+                  bot.x += lookDirX * 0.55;
+                  bot.z += lookDirZ * 0.55;
+                  hitAnyMelee = true;
+                  hitMarkerTimer = 0.18;
+                  hitMarkerCritical = true;
+                  floatingDamages.push({
+                    id: nextDamageId++,
+                    x: bot.x,
+                    y: bot.y + 1.5,
+                    z: bot.z,
+                    amount: res.damageApplied,
+                    critical: true,
+                    timer: 0.65,
+                    maxTimer: 0.65,
+                  });
+                  if (res.killed && !bot.rewardGranted) {
+                    bot.rewardGranted = true;
+                    kills++;
+                    killCombo++;
+                    killComboTimer = 3.8;
+                    score += bot.scoreReward + 50;
+                    credits += bot.creditReward + 15;
+                    killFeedText = `MELEE TAKEDOWN · +${bot.creditReward + 15} CR`;
+                    killFeedTimer = 2.1;
+                    audioEngine.playEnemyDeath();
+                    rebuildEnemyHitboxes();
+                  } else {
+                    audioEngine.playEnemyHit(true);
+                  }
+                }
+              }
+            }
+            if (hitAnyMelee) {
+              cameraAnim.shakeTrauma = Math.min(0.85, cameraAnim.shakeTrauma + 0.24);
+              syncHud(true);
+            }
+          }
+
+          // 3. Handle Firing Input (Automatic for Assault Rifle, Semi-Auto for Revolver & Shotgun)
           const activeId = weaponAnim.activeWeapon;
           const activeSpec = WEAPON_SPECS[activeId];
           const activeRuntime = weaponsRuntime[activeId];
@@ -1059,17 +1622,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
               executeWeaponFire();
             } else if (
               activeRuntime.ammoInMag === 0 &&
-              activeRuntime.reserveAmmo > 0 &&
               weaponAnim.phase === 'ready'
             ) {
-              if (triggerWeaponReload(weaponAnim, activeRuntime, activeSpec)) {
-                audioEngine.playReload(activeId);
-                syncHud(true);
+              if (activeRuntime.reserveAmmo > 0) {
+                if (triggerWeaponReload(weaponAnim, activeRuntime, activeSpec)) {
+                  audioEngine.playReload(activeId);
+                  syncHud(true);
+                }
+              } else if (mouseJustPressed) {
+                // Dry-fire metallic click when out of ammo
+                audioEngine.playEmptyClick();
               }
             }
           }
 
-          // 4. Step Ammo Pickups
+          // 4. Step Differentiated Pickups (Ammo Crates, Nanite Medkit, Ballistic Armor Plate)
           for (let i = 0; i < pickups.length; i++) {
             const p = pickups[i];
             const mesh = arenaData.pickupMeshes[i];
@@ -1082,23 +1649,55 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
               const distToPlayer = Math.hypot(player.x - p.x, player.z - p.z);
               const dyToPlayer = Math.abs(player.y - p.y);
               if (distToPlayer < 1.45 && dyToPlayer < 1.5) {
-                const arSpec = WEAPON_SPECS.assault_rifle;
-                const revSpec = WEAPON_SPECS.revolver;
-                if (
-                  weaponsRuntime.assault_rifle.reserveAmmo < arSpec.maxReserve ||
-                  weaponsRuntime.revolver.reserveAmmo < revSpec.maxReserve
-                ) {
-                  weaponsRuntime.assault_rifle.reserveAmmo = Math.min(
-                    arSpec.maxReserve,
-                    weaponsRuntime.assault_rifle.reserveAmmo + 30
-                  );
-                  weaponsRuntime.revolver.reserveAmmo = Math.min(
-                    revSpec.maxReserve,
-                    weaponsRuntime.revolver.reserveAmmo + 12
-                  );
+                let collected = false;
+                let burstColor = 0x38bdf8;
+
+                if (p.kind === 'health') {
+                  if (player.health < player.maxHealth) {
+                    player.health = Math.min(player.maxHealth, player.health + 40);
+                    pickupFeedText = '+40 NANITE HEALTH RESTORED';
+                    burstColor = 0x10b981;
+                    collected = true;
+                  }
+                } else if (p.kind === 'armor') {
+                  if (player.armor < player.maxArmor) {
+                    player.armor = Math.min(player.maxArmor, player.armor + 50);
+                    pickupFeedText = '+50 BALLISTIC ARMOR EQUIPPED';
+                    burstColor = 0x0ea5e9;
+                    collected = true;
+                  }
+                } else {
+                  const arSpec = WEAPON_SPECS.assault_rifle;
+                  const revSpec = WEAPON_SPECS.revolver;
+                  const sgSpec = WEAPON_SPECS.shotgun;
+                  if (
+                    weaponsRuntime.assault_rifle.reserveAmmo < arSpec.maxReserve ||
+                    weaponsRuntime.revolver.reserveAmmo < revSpec.maxReserve ||
+                    weaponsRuntime.shotgun.reserveAmmo < sgSpec.maxReserve
+                  ) {
+                    weaponsRuntime.assault_rifle.reserveAmmo = Math.min(
+                      arSpec.maxReserve,
+                      weaponsRuntime.assault_rifle.reserveAmmo + 36
+                    );
+                    weaponsRuntime.revolver.reserveAmmo = Math.min(
+                      revSpec.maxReserve,
+                      weaponsRuntime.revolver.reserveAmmo + 12
+                    );
+                    weaponsRuntime.shotgun.reserveAmmo = Math.min(
+                      sgSpec.maxReserve,
+                      weaponsRuntime.shotgun.reserveAmmo + 8
+                    );
+                    pickupFeedText = '+36 CARBINE / +12 MAGNUM / +8 SHOTGUN AMMO';
+                    burstColor = 0xf59e0b;
+                    collected = true;
+                  }
+                }
+
+                if (collected) {
                   p.active = false;
-                  p.respawnTimer = 12.0;
+                  p.respawnTimer = 11.0;
                   mesh.visible = false;
+                  pickupFeedTimer = 2.2;
                   audioEngine.playPickup();
                   spawnParticleBurst(
                     p.x,
@@ -1108,7 +1707,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                     1,
                     0,
                     10,
-                    0x38bdf8,
+                    burstColor,
                     3.8,
                     1.1
                   );
@@ -1132,17 +1731,23 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             if (spawnCooldown <= 0) {
               spawnBotInArena();
               waveSpawnRemaining--;
-              spawnCooldown = 1.35;
+              spawnCooldown = 1.25;
               syncHud(true);
             }
           } else if (waveSpawnRemaining === 0 && aliveEnemies === 0) {
-            // Wave Cleared -> Reward player with small health boost & start next wave
+            // Wave Cleared -> Reward player with health, armor, score & credits, then launch next wave
             player.health = Math.min(player.maxHealth, player.health + 20);
+            player.armor = Math.min(player.maxArmor, player.armor + 15);
+            const waveCreditBonus = 80 + wave * 15;
+            credits += waveCreditBonus;
             score += wave * 250;
             if (score > bestScore) {
               bestScore = score;
               localStorage.setItem('lowpoly_arena_best', String(bestScore));
             }
+            audioEngine.playWaveComplete();
+            pickupFeedText = `WAVE ${wave} CLEARED · +${waveCreditBonus} CR [B: SHOP]`;
+            pickupFeedTimer = 3.2;
             startWave(wave + 1);
             syncHud(true);
           }
@@ -1153,32 +1758,66 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
               player,
               arenaData.colliders,
               arenaData.ramps,
-              simDt
+              simDt,
+              navManager
             );
 
+            if (aiRes.explosionsTriggered.length > 0) {
+              audioEngine.playExplosion();
+              cameraAnim.shakeTrauma = Math.min(0.9, cameraAnim.shakeTrauma + 0.48);
+              for (const exp of aiRes.explosionsTriggered) {
+                spawnParticleBurst(
+                  exp.x,
+                  exp.y,
+                  exp.z,
+                  0,
+                  1,
+                  0,
+                  20,
+                  0xa3e635,
+                  6.8,
+                  1.6
+                );
+              }
+              rebuildEnemyHitboxes();
+            }
+
+            if (aiRes.bossPhaseChanged) {
+              bannerText = `BOSS OVERDRIVE · PHASE ${aiRes.bossPhaseChanged}`;
+              bannerSubtext = 'SPEED & FIRE RATE INCREASED';
+              bannerTimer = 2.4;
+              audioEngine.playWaveStart(true);
+            }
+
             if (aiRes.playerDamageTaken > 0) {
-              player.health = Math.max(0, player.health - aiRes.playerDamageTaken);
-              player.hurtFlashTimer = 0.28;
+              applyDamageToPlayer(
+                player,
+                aiRes.playerDamageTaken,
+                aiRes.lastAttackerX,
+                aiRes.lastAttackerZ,
+                cameraAnim,
+                weaponAnim
+              );
               cameraAnim.shakeTrauma = Math.min(0.85, cameraAnim.shakeTrauma + 0.38);
               audioEngine.playPlayerHurt();
               syncHud(true);
+            }
 
-              if (player.health <= 0) {
-                clearInputs();
-                onGameOverRef.current({
-                  score,
-                  bestScore,
-                  wave,
-                  kills,
-                  shotsFired,
-                  shotsHit,
-                  victory: false,
-                });
-              }
+            if (player.isDead && player.deathAnimTimer >= 0.42) {
+              clearInputs();
+              onGameOverRef.current({
+                score,
+                bestScore,
+                wave,
+                kills,
+                shotsFired,
+                shotsHit,
+                victory: false,
+              });
             }
           }
 
-          // Update enemy meshes & clean up finished KO topples
+          // Update enemy meshes & recycle finished KO topples back into the Object Pool
           for (let i = enemies.length - 1; i >= 0; i--) {
             const bot = enemies[i];
             const rig = enemyRigs.get(bot.id);
@@ -1187,8 +1826,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             }
             if (!bot.alive && bot.koTimer <= 0) {
               if (rig) {
-                scene.remove(rig.root);
+                rig.root.visible = false;
                 enemyRigs.delete(bot.id);
+                const bucket = enemyPool.get(bot.archetype) || [];
+                bucket.push({ bot, rig });
+                enemyPool.set(bot.archetype, bucket);
               }
               enemies.splice(i, 1);
             }
@@ -1216,7 +1858,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         playerRoot.rotation.set(0, player.yaw, 0);
 
         // 2) Base Camera Position (standing eye height 1.68m above ground)
-        baseCameraPos.position.set(0, player.eyeHeight, 0);
+        baseCameraPos.position.set(
+          0,
+          player.eyeHeight + cameraAnim.slideDropOffset + cameraAnim.damageDropOffset,
+          0
+        );
 
         // 3) Head Bob Transform (walking/running/sprinting step cycle)
         headBobTransform.position.set(
@@ -1231,16 +1877,22 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           'YXZ'
         );
 
-        // 4) Head Sway & Inertia Transform (acceleration/deceleration momentum, strafe lean, sprint posture, secondary mouse sway)
+        // 4) Head Sway & Inertia Transform (acceleration/deceleration momentum, strafe lean, sprint posture, slide roll, secondary mouse sway)
         headSwayTransform.position.set(
           cameraAnim.inertiaPosX + cameraAnim.lookSwayPosX + cameraAnim.strafeOffsetX,
           cameraAnim.lookSwayPosY,
           cameraAnim.inertiaPosZ + cameraAnim.sprintForwardOffsetZ
         );
         headSwayTransform.rotation.set(
-          cameraAnim.inertiaPitch + cameraAnim.swayPitch + cameraAnim.sprintPitchBias,
+          cameraAnim.inertiaPitch +
+            cameraAnim.swayPitch +
+            cameraAnim.sprintPitchBias +
+            cameraAnim.damageKickPitch,
           cameraAnim.swayYaw,
-          cameraAnim.inertiaRoll + cameraAnim.strafeRoll,
+          cameraAnim.inertiaRoll +
+            cameraAnim.strafeRoll +
+            cameraAnim.slideRollOffset +
+            cameraAnim.damageKickRoll,
           'YXZ'
         );
 
@@ -1283,7 +1935,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         camera.position.set(0, 0, 0);
         camera.rotation.set(player.pitch, 0, 0, 'YXZ');
 
-        // Apply Weapon Viewmodel Rig transform & First-Person Hands Skeleton
+        // Apply Weapon Viewmodel Rig transform, 30-joint Hands Skeleton & 7-bone First-Person Legs Rig
         const horizSpeed = Math.hypot(player.vx, player.vz);
         applyWeaponRigTransform(
           weaponRig,
@@ -1293,6 +1945,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           settingsRef.current.showHands,
           inspectionViewRef.current
         );
+        updateFirstPersonLegsRig(legsRig, player, weaponAnim, dt);
 
         // Update transient muzzle flash & tracer
         if (muzzleFlashTimer > 0) {
@@ -1424,6 +2077,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('wheel', onWheel);
       window.removeEventListener('contextmenu', onContextMenu);
       window.removeEventListener('blur', onWindowBlur);
       renderer.dispose();

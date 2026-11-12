@@ -1,0 +1,2315 @@
+\# COMPLETE FIVE-MAP LEVEL DESIGN AND LOW-POLY ENVIRONMENT PRODUCTION BIBLE
+
+**For the existing Gemini Argon FPS wave-survival game**
+
+This is a substantially expanded level-design specification covering all five maps, their variations, environmental assets, exact spatial layouts, enemy integration, spawn systems, combat flow, navigation, optimization and visual design.
+
+The objective is not simply to generate five different-looking environments. The objective is to create **five complete, distinct, replayable FPS survival maps**, each with its own gameplay identity, recognizable landmarks, enemy routes, combat arenas, environmental storytelling and carefully optimized low-poly asset library.
+
+I also want to establish one particularly important rule:
+
+\<box border radius="lg" padding={3} gap={2}\> \<badge color="success"\>Non-negotiable production requirement\</badge\> \<title size="xl"\>EXTREMELY LOW-POLY ASSETS\</title\> \- Geometry must actually be low-poly, not merely flat-shaded. \- Use simple silhouettes and angular surfaces. \- Avoid subdivision and unnecessarily dense meshes. \- Reuse modular assets throughout the maps. \- Avoid expensive collision geometry. \- Preserve recognizable silhouettes despite the low polygon count. \- Every map must be playable and compatible with the existing enemy roster. \<divider color="subtle"/\> \*\*Five maps. Multiple layout variations. One consistent visual language.\*\* \</box\>
+
+## 1\. Project-wide design specifications
+
+\<AsyncImageGroup query={\["stylized low poly abandoned desert military base game environment","low poly sci fi underground laboratory game environment","low poly post apocalyptic ruined city game environment","low poly industrial power station factory game environment","low poly arctic military outpost snowy environment game"\]} aspectRatio="5:4" layout="bento"/\>
+
+### 1.1 Existing game preservation
+
+The game already exists. Gemini Argon must work inside the existing project.
+
+Do not rebuild the entire game from scratch.
+
+Preserve:
+
+- First-person player controller.
+- Existing weapon systems.
+- Existing player hands and body.
+- Existing enemy models.
+- Existing enemy AI.
+- Existing enemy statistics.
+- Existing wave manager.
+- Existing damage and health systems.
+- Existing ammunition and reload systems.
+- Existing game menus.
+- Existing audio systems.
+- Existing functioning effects.
+
+Only change existing systems when required to support the new maps, repair bugs or improve optimization.
+
+Do not create duplicate player controllers, duplicate wave managers or competing enemy systems.
+
+### 1.2 Five main environments
+
+| Map ID | Environment | Main gameplay identity |
+| --- | --- | --- |
+| OUTPOST\_01 | Abandoned military outpost | Open combat and cover |
+| FACILITY\_02 | Underground research facility | Tight tactical combat |
+| CITY\_03 | Ruined urban district | Multiple routes and ambushes |
+| POWER\_04 | Industrial power plant | Large machinery and vertical spaces |
+| ARCTIC\_05 | Frozen military installation | Open snowfields and enclosed structures |
+
+### 1.3 Environment scale standards
+
+Use meters as the common design unit if supported by the existing engine.
+
+These are initial blockout dimensions, not arbitrary mandatory measurements. Adapt them to the actual player controller, camera, movement speed, enemy sizes and weapon ranges.
+
+| Element | Starting design dimensions |
+| --- | --- |
+| Standard doorway width | 1.4–1.8 m |
+| Large enemy doorway | 2.5–3.5 m |
+| Standard corridor width | 2.5–3.5 m |
+| Large combat corridor | 4–6 m |
+| Standard room | 8–14 m |
+| Large room | 15–24 m |
+| Main combat arena | 20–35 m |
+| Small cover height | 0.6–0.9 m |
+| Standing cover height | 1.0–1.3 m |
+| Standard floor-to-ceiling height | 3–4 m |
+| Large industrial ceiling | 6–12 m |
+
+Do not use these measurements blindly. Test them against actual gameplay.
+
+---
+
+# 2\. Strict low-poly environment asset specification
+
+This is a critical section. The game must not accidentally become a mixture of extremely low-poly characters and highly detailed environment assets.
+
+## 2.1 Geometry budget
+
+All polygon budgets below refer to triangles, unless the existing software reports polygon counts differently.
+
+| Asset category | Recommended triangle budget |
+| --- | --- |
+| Tiny debris | 4–12 |
+| Small stones | 8–20 |
+| Small crates | 12–30 |
+| Barrels | 12–28 |
+| Small signs | 4–12 |
+| Sandbags | 8–20 |
+| Small rocks | 8–24 |
+| Large rocks | 16–40 |
+| Small plants | 8–24 |
+| Simple bushes | 12–35 |
+| Small furniture | 12–35 |
+| Streetlights | 12–35 |
+| Small machinery | 20–50 |
+| Military barriers | 12–30 |
+| Vehicles | 50–120 |
+| Large machinery | 60–150 |
+| Watchtowers | 70–140 |
+| Small buildings | 60–140 |
+| Medium buildings | 100–220 |
+| Large buildings | 150–300 |
+| Main landmarks | 120–350 |
+
+These are recommended starting targets, not a requirement that every asset must use every available triangle.
+
+**Prefer fewer triangles whenever the silhouette remains readable.**
+
+A simple crate should not use 100 triangles. A simple barrel should not use a detailed cylindrical mesh with dozens of sides.
+
+## 2.2 Geometry construction rules
+
+Use the following geometry methods:
+
+- Cuboids for walls and boxes.
+- Low-sided prisms for barriers.
+- Angular cylinders for pipes and barrels.
+- Triangular prisms for structural supports.
+- Simplified irregular meshes for rocks.
+- Small groups of angular shapes for foliage.
+- Flat polygons for signs and panels.
+- Low-sided cylinders for tanks.
+- Simple tapered meshes for towers.
+- Modular wall and floor segments for buildings.
+
+Avoid:
+
+- Subdivision surfaces.
+- Dense bevel modifiers.
+- Smooth high-resolution cylinders.
+- Realistic sculpted surfaces.
+- Excessive edge loops.
+- Unnecessary internal geometry.
+- Hidden faces.
+- Excessively detailed damage meshes.
+- High-poly imported asset packs.
+
+## 2.3 Flat shading and materials
+
+Use flat shading as the default.
+
+Use a limited color palette for each map.
+
+Each asset should normally use one or two materials.
+
+For larger assets, three materials are acceptable when necessary for readability.
+
+Use color variation to communicate form.
+
+Example:
+
+A concrete barrier:
+
+- Main surface: medium grey.
+- Upper surfaces: lighter grey.
+- Side surfaces: darker grey.
+
+A military crate:
+
+- Main surface: military green.
+- Metal reinforcement: dark grey.
+- Small markings: muted yellow.
+
+Do not use excessive textures to compensate for simple geometry.
+
+## 2.4 Asset reuse
+
+Create a common modular asset library.
+
+Reuse the same underlying crate, barrel, wall, concrete barrier and industrial box meshes throughout the game.
+
+Change their materials, rotations, scales and arrangements where appropriate.
+
+Do not duplicate nearly identical meshes when one reusable model is sufficient.
+
+Do not scale assets so extremely that their original silhouette becomes distorted.
+
+## 2.5 Collision geometry
+
+Visual geometry and collision geometry should be separate where practical.
+
+Use:
+
+- Boxes for buildings.
+- Simple capsules or boxes for small props.
+- Simplified convex shapes for vehicles.
+- Simple floor and wall collision.
+- Dedicated navigation geometry.
+
+Do not use complex triangle-mesh collision for every small object.
+
+Small decorative objects should not accidentally become major enemy navigation obstacles.
+
+## 2.6 Low-poly visual quality
+
+The result must look deliberately stylized, not unfinished.
+
+Use:
+
+- Strong silhouettes.
+- Angular building outlines.
+- Clear environmental color blocking.
+- Distinctive landmarks.
+- Restrained surface details.
+- Carefully composed lighting.
+- Large recognizable structural forms.
+
+---
+
+# 3\. Map 01 — Abandoned Military Outpost
+
+\<AsyncImageGroup query={\["low poly desert military base compound game environment watchtower","low poly abandoned military checkpoint desert environment 3D game","low poly desert military barracks concrete bunker environment","low poly military vehicle sandbags desert game map"\]} aspectRatio="5:4"/\>
+
+\<badge color="success"\>MAP 01 — Primary reference map\</badge\>
+
+**Map ID:** `OUTPOST_01`
+
+**Theme:** Abandoned military installation in a dry desert region.
+
+**Primary gameplay:** Open combat, medium-range engagements, defensive cover, multiple enemy entrances and large outdoor encounters.
+
+**Suggested starting footprint:** 80 × 75 meters.
+
+**Main colors:**
+
+- Sand beige.
+- Muted military green.
+- Concrete grey.
+- Dark brown.
+- Faded yellow.
+- Rusted orange.
+
+## 3.1 Overall map layout
+
+Divide the outpost into eight recognizable gameplay sections.
+
+\<AsyncImage query="low poly desert military base top down level design layout game map courtyard bunkers watchtower hangar" aspectRatio="16:9" width="100%"/\>
+
+The layout should contain:
+
+1. Southern checkpoint entrance.
+2. Central military courtyard.
+3. Western reinforced bunker.
+4. Eastern watchtower.
+5. Northern vehicle maintenance yard.
+6. Eastern storage compound.
+7. Western maintenance tunnel.
+8. Northern perimeter wall.
+
+### Spatial arrangement
+
+**Southern checkpoint**
+
+- Large entrance gate.
+- Two angular guard structures.
+- Concrete vehicle barriers.
+- Guard booth.
+- Damaged fence.
+- Two floodlights.
+- Small military signage.
+- Main enemy approach.
+
+The entrance must be visually recognizable from the central courtyard.
+
+**Central courtyard**
+
+This is the most important gameplay space.
+
+Suggested dimensions: 30 × 30 meters.
+
+Create:
+
+- One abandoned military truck.
+- Two large concrete barriers.
+- Four small military crates.
+- Two sandbag positions.
+- One damaged concrete structure.
+- One small central landmark.
+- Multiple clear movement lanes.
+
+Keep approximately 60% of the courtyard relatively open.
+
+Do not fill the entire courtyard with crates and barriers.
+
+The player must have room to move, dodge, aim and fight multiple enemies.
+
+**Western bunker**
+
+Create a reinforced structure with:
+
+- Thick angular concrete walls.
+- Two entrances.
+- One main interior room.
+- One small ammunition storage room.
+- One observation window.
+- Simple metal doors.
+- Industrial ceiling lights.
+
+The bunker should create a different combat experience from the open courtyard.
+
+Keep the entrances compatible with the standard enemy dimensions.
+
+Do not allow heavy enemies or bosses into the bunker unless the actual measured clearance permits it.
+
+**Eastern watchtower**
+
+Create:
+
+- Four simple angular supports.
+- One raised observation platform.
+- One small upper cabin.
+- One ladder or stairway.
+- One antenna.
+- One searchlight.
+
+The tower should be a visual landmark.
+
+Do not make it a mandatory enemy navigation route if the existing enemy AI cannot navigate ladders.
+
+**Northern vehicle yard**
+
+Create:
+
+- Two simplified military trucks.
+- One small repair shelter.
+- Three military crates.
+- One fuel storage structure.
+- Two concrete support barriers.
+
+Ensure the vehicles are positioned with enough space around them for enemy navigation.
+
+**Eastern storage compound**
+
+Create:
+
+- Three container-like structures.
+- One supply building.
+- Several crates.
+- One small generator.
+- One fenced equipment area.
+
+Use the containers to create tactical cover without creating narrow dead ends.
+
+**Western maintenance tunnel**
+
+Create:
+
+- One main entrance.
+- Angular concrete tunnel.
+- Pipe sections.
+- Utility lighting.
+- A small maintenance room.
+
+The tunnel should primarily be a player route and a standard-enemy route.
+
+Do not force large enemies into it.
+
+## 3.2 Outpost map variations
+
+Create three variations using the same modular asset library.
+
+\<grid columns={2} gap={3}\> \<grid-item\> \<AsyncImage query="low poly desert military base abandoned bright sunny environment" aspectRatio="5:4" width="100%"/\> \*\*Variation A — Desert Day\*\*
+
+```
+Bright lighting, dry sand, faded paint, clear visibility.
+```
+
+\</grid-item\> \<grid-item\> \<AsyncImage query="low poly military outpost sunset desert game environment" aspectRatio="5:4" width="100%"/\> \*\*Variation B — Sunset\*\*
+
+```
+Orange lighting, longer shadows, warm concrete and atmospheric sky.
+```
+
+\</grid-item\> \<grid-item\> \<AsyncImage query="low poly abandoned military base dark night searchlights game environment" aspectRatio="5:4" width="100%"/\> \*\*Variation C — Night Operation\*\*
+
+```
+Dark blue environment, controlled floodlights and illuminated entrances.
+```
+
+\</grid-item\> \<grid-item\> \<AsyncImage query="low poly abandoned desert military base sandstorm game environment" aspectRatio="5:4" width="100%"/\> \*\*Optional Variation D — Sandstorm\*\*
+
+```
+Reduced distant visibility, restrained dust effects and stronger landmark silhouettes.
+```
+
+\</grid-item\> \</grid\>
+
+### Variation A — Desert Day
+
+Changes:
+
+- Brighter sand.
+- Stronger directional sunlight.
+- Clearer visibility.
+- More visible distant structures.
+- Less artificial lighting.
+
+Gameplay should remain identical to the base layout.
+
+### Variation B — Sunset
+
+Changes:
+
+- Orange directional lighting.
+- Longer environmental shadows.
+- Slightly darker bunker interiors.
+- Warm highlights on vehicle surfaces.
+- More noticeable silhouettes.
+
+Do not reduce enemy visibility excessively.
+
+### Variation C — Night Operation
+
+Changes:
+
+- Dark blue ambient environment.
+- Working floodlights.
+- Searchlights on the tower.
+- Illuminated bunker entrances.
+- Small warning lights.
+- Controlled atmospheric fog.
+
+The player must still be able to distinguish enemy silhouettes.
+
+### Variation D — Sandstorm
+
+Optional environmental variation.
+
+Changes:
+
+- Dust particles.
+- Reduced distant visibility.
+- Slightly muted colors.
+- More pronounced foreground silhouettes.
+
+Do not let the particle system become expensive.
+
+Do not make enemies invisible.
+
+## 3.3 Map-specific asset library
+
+Create these assets specifically for the outpost.
+
+| Asset | Target triangles |
+| --- | --- |
+| Small military crate | 12–20 |
+| Large military crate | 20–30 |
+| Sandbag section | 12–20 |
+| Concrete barrier | 12–24 |
+| Military barrel | 12–20 |
+| Guard booth | 40–70 |
+| Small bunker | 70–130 |
+| Watchtower | 80–140 |
+| Military truck | 60–120 |
+| Antenna | 15–35 |
+| Searchlight | 10–20 |
+| Small generator | 30–50 |
+| Fence section | 8–20 |
+| Supply container | 30–60 |
+| Military sign | 4–10 |
+
+Use reusable assets to construct larger structures.
+
+## 3.4 Enemy integration and repairs
+
+Use the existing enemy roster, not newly invented enemy models.
+
+Create a map-specific configuration.
+
+**Standard enemies**
+
+- Spawn at the southern checkpoint.
+- Enter from the northern vehicle yard.
+- Approach through the eastern perimeter.
+- Enter through the western outdoor connection.
+
+**Fast enemies**
+
+- Prefer the broad courtyard approaches.
+- Use open perimeter routes.
+- Avoid unnecessary obstacles between vehicles.
+- Avoid the maintenance tunnel if it is too narrow.
+
+**Heavy enemies**
+
+- Use the main checkpoint.
+- Use the northern vehicle yard.
+- Use the wide courtyard entrances.
+- Never use narrow interior routes without clearance validation.
+
+**Ranged enemies**
+
+- Place at validated perimeter firing positions.
+- Use clear sightlines toward the courtyard.
+- Allow them to reposition.
+- Prevent shots through solid bunkers and vehicles.
+
+**Special enemies**
+
+- Provide enough open space for their existing attacks.
+- Validate their attack distance and collision.
+- Avoid placing them inside small structures.
+
+**Mini-bosses**
+
+- Use the central courtyard.
+- Keep vehicles and barriers outside the required movement envelope.
+- Provide multiple clear approach routes.
+
+**Bosses**
+
+- Use a dedicated courtyard encounter layout.
+- Disable unsuitable bunker and tunnel navigation routes.
+- Keep sufficient distance from surrounding walls.
+- Verify all boss attack animations and collision volumes.
+
+## 3.5 Outpost level-design quality checks
+
+- No enemy can become trapped between the truck and a concrete barrier.
+- No enemy spawns inside the bunker.
+- The watchtower does not accidentally become an unreachable navigation target.
+- The maintenance tunnel does not attract oversized enemies.
+- All standard enemy entrances connect to the main combat area.
+- The courtyard has sufficient room for a full wave.
+- Bosses do not collide with the vehicle geometry.
+- Ranged enemies have actual line of sight.
+- The player cannot unintentionally escape the map.
+- All variation lighting setups preserve combat readability.
+
+---
+
+# 4\. Map 02 — Underground Research Facility
+
+\<AsyncImageGroup query={\["low poly underground futuristic research laboratory game level","low poly sci fi containment chamber environment 3D","low poly underground science facility corridor game art","low poly industrial reactor room game environment"\]} aspectRatio="5:4"/\>
+
+**Map ID:** `FACILITY_02`
+
+**Theme:** Abandoned underground research and containment complex.
+
+**Primary gameplay:** Tactical corridors, multiple connected rooms, controlled combat spaces and containment-themed encounters.
+
+**Suggested starting footprint:** 65 × 60 meters.
+
+**Main colors:**
+
+- Cold grey.
+- Desaturated blue.
+- Dark steel.
+- White.
+- Muted cyan.
+- Warning orange.
+- Dark red.
+
+## 4.1 Overall map layout
+
+The facility should consist of seven major zones.
+
+1. Main security entrance.
+2. Central containment chamber.
+3. Research laboratory.
+4. Observation room.
+5. Specimen storage.
+6. Maintenance corridor.
+7. Reactor chamber.
+
+\<AsyncImage query="low poly sci fi underground research facility top down floor plan interconnected laboratory containment reactor rooms" aspectRatio="16:9" width="100%"/\>
+
+### Main security entrance
+
+Create:
+
+- Reinforced double doors.
+- Security desk.
+- Two simple control panels.
+- Wall warning signs.
+- Small security windows.
+- Angular ceiling lights.
+
+The entrance should transition from a narrow entry section into a larger combat space.
+
+### Central containment chamber
+
+Suggested dimensions: 24 × 24 meters.
+
+This is the main combat landmark.
+
+Create:
+
+- Large containment structure.
+- Angular glass panels.
+- Four structural supports.
+- Central platform.
+- Broken laboratory equipment.
+- Peripheral control panels.
+- Two or more wide entrances.
+
+The central containment structure must not block the entire arena.
+
+Keep a continuous walkable route around it.
+
+### Research laboratory
+
+Suggested dimensions: 12 × 16 meters.
+
+Create:
+
+- Four laboratory tables.
+- Three simple cabinets.
+- Two computer consoles.
+- One storage unit.
+- One small observation window.
+
+Keep the table arrangement relatively open.
+
+Do not create tiny gaps between laboratory tables.
+
+### Observation room
+
+Create:
+
+- Large reinforced viewing window.
+- Angular control desk.
+- Three console panels.
+- One wall monitor.
+- One access doorway.
+
+Do not allow enemies to target the player through solid walls.
+
+### Specimen storage
+
+Create:
+
+- Three containment pods.
+- Two storage cabinets.
+- One reinforced door.
+- Warning markings.
+- Simple floor panels.
+
+Keep the containment pods outside the main enemy movement corridor.
+
+### Maintenance corridor
+
+Create:
+
+- Pipe segments.
+- Ventilation units.
+- Utility panels.
+- Industrial lights.
+- A small maintenance access room.
+
+This should be a secondary route.
+
+Do not make it the primary route for oversized enemies.
+
+### Reactor chamber
+
+Suggested dimensions: 22 × 22 meters.
+
+Create:
+
+- Central geometric reactor.
+- Four structural supports.
+- Large energy conduits.
+- Angular metal floor panels.
+- Two entrances.
+- Peripheral equipment.
+
+The reactor should be the second major encounter space.
+
+## 4.2 Facility variations
+
+\<grid columns={2} gap={3}\> \<grid-item\> \<AsyncImage query="low poly sci fi laboratory clean white blue lighting" aspectRatio="5:4" width="100%"/\> \*\*Variation A — Operational Facility\*\* \</grid-item\> \<grid-item\> \<AsyncImage query="low poly abandoned dark laboratory emergency red lighting" aspectRatio="5:4" width="100%"/\> \*\*Variation B — Emergency Lockdown\*\* \</grid-item\> \<grid-item\> \<AsyncImage query="low poly abandoned science laboratory green toxic atmosphere" aspectRatio="5:4" width="100%"/\> \*\*Variation C — Containment Failure\*\* \</grid-item\> \<grid-item\> \<AsyncImage query="low poly futuristic underground laboratory blue reactor energy lighting" aspectRatio="5:4" width="100%"/\> \*\*Variation D — Reactor Emergency\*\* \</grid-item\> \</grid\>
+
+### Variation A — Operational Facility
+
+- White and blue surfaces.
+- Bright ceiling lights.
+- Clean floors.
+- Active control panels.
+- Visible containment equipment.
+
+### Variation B — Emergency Lockdown
+
+- Red warning lights.
+- Some closed security doors.
+- Damaged consoles.
+- Emergency signs.
+- Darker secondary rooms.
+
+Do not permanently close routes needed for the wave system.
+
+### Variation C — Containment Failure
+
+- Broken containment panels.
+- Angular debris.
+- Muted green lighting.
+- Damaged machinery.
+- Controlled atmospheric effects.
+
+### Variation D — Reactor Emergency
+
+- Brighter reactor illumination.
+- Cyan emissive accents.
+- Darkened peripheral structures.
+- Limited energy particles.
+- Clear floor visibility.
+
+## 4.3 Facility asset library
+
+| Asset | Target triangles |
+| --- | --- |
+| Laboratory table | 16–30 |
+| Laboratory chair | 10–20 |
+| Computer console | 12–25 |
+| Wall panel | 4–12 |
+| Containment pod | 30–60 |
+| Storage cabinet | 12–25 |
+| Reactor section | 50–100 |
+| Small pipe | 6–14 |
+| Large pipe section | 8–20 |
+| Reinforced door | 12–25 |
+| Ceiling light | 6–12 |
+| Control panel | 8–18 |
+| Ventilation unit | 12–25 |
+| Industrial tank | 20–40 |
+
+### Enemy integration
+
+**Standard enemies**
+
+- Main security entrance.
+- Containment chamber access.
+- Research laboratory connection.
+- Reactor access.
+
+**Fast enemies**
+
+- Use larger connecting corridors.
+- Use the central containment chamber.
+- Avoid dense laboratory furniture.
+
+**Heavy enemies**
+
+- Use the containment chamber and reactor room.
+- Exclude narrow specimen storage passages.
+- Exclude unsuitable maintenance sections.
+
+**Ranged enemies**
+
+- Use observation-compatible firing locations.
+- Maintain valid line of sight.
+- Avoid placing them behind solid glass or walls unless the actual weapon system supports the intended interaction.
+
+**Special enemies**
+
+- Validate special attacks against laboratory geometry.
+- Ensure no attacks accidentally pass through walls.
+- Give movement-based enemies enough room.
+
+**Mini-bosses**
+
+- Containment chamber.
+- Reactor chamber.
+
+**Bosses**
+
+- Dedicated containment arena or expanded reactor arena.
+
+### Facility-specific fixes
+
+- Remove unnecessary collision from small laboratory props.
+- Ensure containment pods do not block navigation.
+- Fix doorway width for heavy enemies.
+- Prevent enemies from getting stuck around the reactor.
+- Check all floor transitions.
+- Prevent enemy AI from trying to reach inaccessible observation platforms.
+- Keep boss navigation separate from the narrow corridor network.
+
+---
+
+# 5\. Map 03 — Ruined City District
+
+\<AsyncImageGroup query={\["stylized low poly post apocalyptic city street game level","low poly abandoned urban street damaged buildings game environment","low poly ruined city parking garage environment","low poly destroyed city plaza concrete rubble game art"\]} aspectRatio="5:4"/\>
+
+**Map ID:** `CITY_03`
+
+**Theme:** Abandoned urban district after a catastrophic outbreak.
+
+**Primary gameplay:** Multiple approach routes, open streets, interconnected buildings, mixed cover and changing combat distances.
+
+**Suggested starting footprint:** 90 × 75 meters.
+
+**Main colors:**
+
+- Concrete grey.
+- Muted brown.
+- Faded brick red.
+- Dirty beige.
+- Dark asphalt.
+- Faded blue.
+- Rusted orange.
+
+## 5.1 Overall layout
+
+Divide the city into eight sections.
+
+1. Main street.
+2. Central city plaza.
+3. Collapsed apartment block.
+4. Abandoned shopping building.
+5. Parking structure.
+6. Side alley network.
+7. Damaged bus station.
+8. Service yard.
+
+\<AsyncImage query="low poly ruined city urban district top down game level map layout main road plaza buildings parking garage" aspectRatio="16:9" width="100%"/\>
+
+### Main street
+
+Suggested width: 12–16 meters.
+
+Create:
+
+- Damaged road.
+- Two simplified vehicles.
+- Angular streetlights.
+- Road markings.
+- Concrete debris.
+- Two street signs.
+- Sidewalk sections.
+
+Keep the road open enough for heavy enemy movement.
+
+### Central city plaza
+
+Suggested dimensions: 28 × 25 meters.
+
+Create:
+
+- Damaged fountain.
+- Concrete benches.
+- Broken pavement.
+- Small vegetation patches.
+- Three large cover structures.
+- One recognizable central landmark.
+
+This is the main mini-boss-compatible arena.
+
+### Collapsed apartment block
+
+Create:
+
+- Three-story visual facade.
+- Broken windows.
+- Simplified exposed concrete.
+- Angular collapsed wall.
+- One accessible ground-floor room.
+- One partially collapsed entrance.
+
+Do not create complex interior geometry if it is not playable.
+
+### Abandoned shopping building
+
+Create:
+
+- Simple storefront.
+- Angular signage.
+- Broken display windows.
+- Shelves.
+- Counters.
+- Small storage room.
+
+Use a simplified interior.
+
+Avoid hundreds of individual products or decorative objects.
+
+### Parking structure
+
+Create:
+
+- Two parking levels if supported.
+- Angular support pillars.
+- Concrete ramp.
+- Simplified vehicles.
+- Parking markings.
+- Side railings.
+
+The upper level must have properly configured collision.
+
+If the enemy AI cannot navigate the vertical connection, do not pretend it can.
+
+### Alley network
+
+Create three distinct alleys.
+
+**Alley A:** Wide connecting alley.
+
+**Alley B:** Narrow player-accessible route.
+
+**Alley C:** Dead-end visual storytelling area.
+
+Avoid allowing enemies to spawn in dead-end areas without an exit.
+
+### Damaged bus station
+
+Create:
+
+- Simplified low-poly bus.
+- Bus shelter.
+- Bench.
+- Signpost.
+- Concrete cover.
+
+The bus should not block the entire road.
+
+### Service yard
+
+Create:
+
+- Loading area.
+- Two shipping containers.
+- Supply crates.
+- Damaged delivery truck.
+- Service entrance.
+
+Keep the main approach wide.
+
+## 5.2 City variations
+
+\<grid columns={2} gap={3}\> \<grid-item\> \<AsyncImage query="low poly ruined city sunny daytime game environment" aspectRatio="5:4" width="100%"/\> \*\*Variation A — Daytime\*\* \</grid-item\> \<grid-item\> \<AsyncImage query="low poly abandoned city rainy wet street game environment" aspectRatio="5:4" width="100%"/\> \*\*Variation B — Rain\*\* \</grid-item\> \<grid-item\> \<AsyncImage query="low poly post apocalyptic city night neon lights game environment" aspectRatio="5:4" width="100%"/\> \*\*Variation C — Night\*\* \</grid-item\> \<grid-item\> \<AsyncImage query="low poly ruined city autumn orange fog environment game" aspectRatio="5:4" width="100%"/\> \*\*Variation D — Heavy Atmosphere\*\* \</grid-item\> \</grid\>
+
+### Variation A — Daytime
+
+- Neutral daylight.
+- Visible architecture.
+- Clear street surfaces.
+- Moderate environmental debris.
+
+### Variation B — Rain
+
+- Darkened road materials.
+- Small puddles represented by simple flat surfaces.
+- Rain particle system.
+- Muted lighting.
+- Controlled reflections.
+
+Do not implement expensive real-time water simulation.
+
+### Variation C — Night
+
+- Dark blue lighting.
+- Streetlights.
+- Storefront emergency lighting.
+- Selected illuminated windows.
+- Strong landmark silhouettes.
+
+### Variation D — Heavy Atmosphere
+
+- Muted orange-grey color palette.
+- Restrained fog.
+- Reduced distant contrast.
+- Controlled environmental particles.
+
+## 5.3 City asset library
+
+| Asset | Target triangles |
+| --- | --- |
+| Streetlight | 12–30 |
+| Traffic sign | 4–12 |
+| Street bench | 12–25 |
+| Concrete bench | 8–18 |
+| Small car | 50–90 |
+| Abandoned bus | 80–120 |
+| Road barrier | 12–24 |
+| Broken wall | 15–40 |
+| Small rubble piece | 4–12 |
+| Large rubble piece | 12–30 |
+| Storefront | 50–100 |
+| Apartment facade | 100–200 |
+| Parking support pillar | 8–16 |
+| Shopping counter | 12–25 |
+| Shipping container | 30–55 |
+
+## 5.4 City enemy integration
+
+**Standard enemies**
+
+- Main street entrances.
+- Central plaza entrances.
+- Shopping building ground floor.
+- Service yard.
+
+**Fast enemies**
+
+- Main street.
+- Wide alleys.
+- Plaza perimeter.
+
+Do not allow them to repeatedly collide with parked vehicles.
+
+**Heavy enemies**
+
+- Main street.
+- Plaza.
+- Service yard.
+
+Avoid narrow building entrances.
+
+**Ranged enemies**
+
+- Validated street intersections.
+- Wide storefront openings.
+- Appropriate exterior positions.
+
+**Special enemies**
+
+- Use the plaza and street.
+- Validate attack collision around vehicles and walls.
+
+**Mini-bosses**
+
+- Central plaza.
+- Main street expanded arena.
+
+**Bosses**
+
+- Dedicated central plaza configuration.
+
+### City-specific repairs
+
+- Ensure vehicle collision is simplified.
+- Avoid navigation holes between road and sidewalk.
+- Remove accidental collision from small rubble.
+- Prevent heavy enemies entering narrow alleys.
+- Check parking ramp navigation.
+- Ensure enemies do not fall from upper parking levels.
+- Prevent enemies from getting stuck between building entrances.
+- Keep the main street open for large encounters.
+
+---
+
+# 6\. Map 04 — Industrial Power Plant
+
+\<AsyncImageGroup query={\["low poly industrial power plant game environment large generator room","low poly factory interior industrial machinery game level","low poly industrial cooling chamber pipes tanks environment","low poly power station industrial turbine game art"\]} aspectRatio="5:4"/\>
+
+**Map ID:** `POWER_04`
+
+**Theme:** Abandoned industrial power station.
+
+**Primary gameplay:** Large combat spaces, machinery landmarks, controlled verticality, industrial corridors and heavy enemy encounters.
+
+**Suggested starting footprint:** 80 × 80 meters.
+
+**Main colors:**
+
+- Dark steel.
+- Industrial grey.
+- Muted yellow.
+- Rust orange.
+- Concrete brown.
+- Dark blue.
+- Warning red.
+
+## 6.1 Overall layout
+
+Divide the power plant into eight zones.
+
+1. Main generator hall.
+2. Turbine chamber.
+3. Cooling chamber.
+4. Maintenance platform.
+5. Control room.
+6. Storage yard.
+7. Electrical service room.
+8. Loading entrance.
+
+\<AsyncImage query="low poly industrial power plant top down level design layout generator turbine storage control room game map" aspectRatio="16:9" width="100%"/\>
+
+### Main generator hall
+
+Suggested dimensions: 30 × 28 meters.
+
+Create:
+
+- One central generator.
+- Four large support structures.
+- Two side machinery units.
+- Perimeter walkways.
+- Four main entrances.
+- Industrial lighting.
+
+The central generator should be the primary landmark.
+
+Keep its surrounding movement area open.
+
+### Turbine chamber
+
+Suggested dimensions: 25 × 25 meters.
+
+Create:
+
+- Large angular turbine.
+- Low-poly support frames.
+- Simplified pipes.
+- Two large entrances.
+- Industrial floor markings.
+
+This is a potential boss arena.
+
+### Cooling chamber
+
+Create:
+
+- Two cooling tanks.
+- Large pipes.
+- Utility platforms.
+- Structural supports.
+- Maintenance equipment.
+
+Avoid putting collision-heavy pipes directly across the main navigation route.
+
+### Maintenance platform
+
+Create:
+
+- Elevated walkway.
+- Metal railings.
+- Simple stairs.
+- Industrial equipment.
+- Utility lights.
+
+Keep it accessible to the player.
+
+Only include it in enemy navigation if the existing AI can navigate the vertical connections correctly.
+
+### Control room
+
+Create:
+
+- Control desks.
+- Three simple computer consoles.
+- Angular screens.
+- Industrial chairs.
+- Reinforced viewing window.
+
+### Storage yard
+
+Create:
+
+- Industrial containers.
+- Crates.
+- Barrels.
+- Spare equipment.
+- One simplified forklift.
+
+Keep the forklift away from essential enemy routes.
+
+### Electrical service room
+
+Create:
+
+- Electrical cabinets.
+- Wall panels.
+- Warning markings.
+- Cable conduits.
+- One main industrial doorway.
+
+### Loading entrance
+
+Create:
+
+- Large industrial doors.
+- Loading platform.
+- Two storage containers.
+- One vehicle.
+- Concrete approach.
+
+This is a major heavy-enemy entrance.
+
+## 6.2 Power plant variations
+
+\<grid columns={2} gap={3}\> \<grid-item\> \<AsyncImage query="low poly industrial factory bright neutral lighting environment" aspectRatio="5:4" width="100%"/\> \*\*Variation A — Normal Operation\*\* \</grid-item\> \<grid-item\> \<AsyncImage query="low poly abandoned industrial factory orange fire emergency lighting" aspectRatio="5:4" width="100%"/\> \*\*Variation B — Emergency\*\* \</grid-item\> \<grid-item\> \<AsyncImage query="low poly dark industrial factory blue night lighting game" aspectRatio="5:4" width="100%"/\> \*\*Variation C — Power Failure\*\* \</grid-item\> \<grid-item\> \<AsyncImage query="low poly industrial power plant green toxic fog game environment" aspectRatio="5:4" width="100%"/\> \*\*Variation D — Contaminated Facility\*\* \</grid-item\> \</grid\>
+
+### Variation A — Normal Operation
+
+- Neutral industrial lighting.
+- Clear visibility.
+- Active control panel lighting.
+- Muted metal materials.
+
+### Variation B — Emergency
+
+- Orange emergency lights.
+- Red warning panels.
+- Limited sparks.
+- Restrained smoke effects.
+- Clear combat visibility.
+
+### Variation C — Power Failure
+
+- Darker environment.
+- Emergency lights.
+- Selected blue lighting.
+- Strong silhouettes.
+
+### Variation D — Contaminated Facility
+
+- Muted green atmosphere.
+- Small controlled fog volumes.
+- Limited environmental particles.
+- No expensive full-screen effects.
+
+## 6.3 Power plant asset library
+
+| Asset | Target triangles |
+| --- | --- |
+| Small pipe | 6–12 |
+| Large pipe | 10–20 |
+| Small tank | 20–35 |
+| Large tank | 30–55 |
+| Generator | 60–120 |
+| Turbine | 70–140 |
+| Electrical cabinet | 12–25 |
+| Control console | 15–30 |
+| Industrial crate | 15–30 |
+| Forklift | 50–100 |
+| Catwalk section | 12–25 |
+| Metal stairs | 20–40 |
+| Industrial support | 8–18 |
+| Ventilation unit | 15–30 |
+| Warning sign | 4–10 |
+
+## 6.4 Power plant enemy integration
+
+**Standard enemies**
+
+- Main loading entrance.
+- Generator hall entrances.
+- Storage yard.
+- Cooling chamber connection.
+
+**Fast enemies**
+
+- Wide generator hall routes.
+- Storage yard.
+- Open industrial connections.
+
+**Heavy enemies**
+
+- Loading entrance.
+- Generator hall.
+- Turbine chamber.
+
+Do not allow them to navigate unsuitable catwalks.
+
+**Ranged enemies**
+
+- Use validated industrial firing positions.
+- Avoid machinery obstructing all sightlines.
+- Make sure cover is not mistaken for open space.
+
+**Special enemies**
+
+- Test attack animations against large machinery.
+- Prevent attacks from interacting incorrectly with pipe collision.
+
+**Mini-bosses**
+
+- Generator hall.
+- Turbine chamber.
+
+**Bosses**
+
+- Dedicated turbine chamber.
+
+### Power plant-specific repairs
+
+- Check all pipe intersections.
+- Check large machinery collision.
+- Validate floor connections.
+- Test every stairway.
+- Ensure heavy enemies cannot enter unsuitable maintenance paths.
+- Keep bosses away from inaccessible elevated platforms.
+- Prevent enemies from getting stuck between turbine supports.
+- Use simple collision shapes for generators.
+- Ensure large arena routes remain open.
+
+---
+
+# 7\. Map 05 — Arctic Military Installation
+
+\<AsyncImageGroup query={\["low poly snowy military base video game environment low poly","low poly arctic research military outpost snow hangar game","low poly snow covered military vehicles game environment","low poly frozen military bunker base game level"\]} aspectRatio="5:4"/\>
+
+**Map ID:** `ARCTIC_05`
+
+**Theme:** Remote frozen military installation.
+
+**Primary gameplay:** Open snowfield combat, military building interiors, hangar battles, snow-covered obstacles and large outdoor encounters.
+
+**Suggested starting footprint:** 85 × 80 meters.
+
+**Main colors:**
+
+- Snow white.
+- Cold grey.
+- Muted blue.
+- Military green.
+- Dark steel.
+- Faded orange.
+- Icy cyan.
+
+## 7.1 Overall layout
+
+Create eight distinct sections.
+
+1. Frozen central yard.
+2. Large military hangar.
+3. Barracks.
+4. Radio tower.
+5. Underground bunker.
+6. Service road.
+7. Equipment storage yard.
+8. Frozen perimeter.
+
+\<AsyncImage query="low poly arctic snowy military base top down level design map hangar barracks radio tower bunker" aspectRatio="16:9" width="100%"/\>
+
+### Frozen central yard
+
+Suggested dimensions: 32 × 30 meters.
+
+Create:
+
+- Open snow-covered floor.
+- One abandoned military vehicle.
+- Two concrete barriers.
+- Four small snow formations.
+- One equipment crate cluster.
+- One large floodlight.
+
+Keep the central section relatively open.
+
+### Military hangar
+
+Suggested dimensions: 28 × 22 meters.
+
+Create:
+
+- Large angular hangar.
+- Wide entrance.
+- Simplified interior support beams.
+- One military vehicle.
+- Maintenance equipment.
+- Storage crates.
+- Industrial lights.
+
+The hangar should be compatible with heavy enemies where actual dimensions permit.
+
+### Barracks
+
+Create:
+
+- Simple beds.
+- Lockers.
+- Small tables.
+- Storage cabinets.
+- Angular windows.
+- One corridor.
+
+Keep the barracks primarily an interior player route.
+
+### Radio tower
+
+Create:
+
+- Angular support structure.
+- Antenna.
+- Small control cabin.
+- Foundation platform.
+- Simple warning lights.
+
+### Underground bunker
+
+Create:
+
+- Reinforced entrance.
+- Concrete corridor.
+- Small equipment room.
+- Emergency lighting.
+- Storage room.
+
+Exclude oversized enemies from this route if clearance is insufficient.
+
+### Service road
+
+Create:
+
+- Snow-covered road.
+- Two simplified vehicles.
+- Concrete barriers.
+- Warning signs.
+- Utility structures.
+
+### Equipment storage yard
+
+Create:
+
+- Shipping containers.
+- Military crates.
+- Generator.
+- Fuel storage.
+- Maintenance equipment.
+
+### Frozen perimeter
+
+Create:
+
+- Angular rock formations.
+- Snow-covered low-poly trees.
+- Simple fence.
+- Watchlights.
+- Distant mountains.
+
+Distant mountains should use extremely simplified geometry.
+
+## 7.2 Arctic variations
+
+\<grid columns={2} gap={3}\> \<grid-item\> \<AsyncImage query="low poly snowy military base bright winter daylight game environment" aspectRatio="5:4" width="100%"/\> \*\*Variation A — Clear Winter\*\* \</grid-item\> \<grid-item\> \<AsyncImage query="low poly arctic military base blue night snowy game environment" aspectRatio="5:4" width="100%"/\> \*\*Variation B — Polar Night\*\* \</grid-item\> \<grid-item\> \<AsyncImage query="low poly snowy military base blizzard environment video game" aspectRatio="5:4" width="100%"/\> \*\*Variation C — Blizzard\*\* \</grid-item\> \<grid-item\> \<AsyncImage query="low poly frozen military base sunset snowy mountains game environment" aspectRatio="5:4" width="100%"/\> \*\*Variation D — Frozen Sunset\*\* \</grid-item\> \</grid\>
+
+### Variation A — Clear Winter
+
+- Bright snow.
+- Blue shadows.
+- Clear mountain silhouettes.
+- Neutral lighting.
+
+### Variation B — Polar Night
+
+- Deep blue sky.
+- Strong artificial lights.
+- Controlled environmental fog.
+- Illuminated hangar.
+- Clear enemy visibility.
+
+### Variation C — Blizzard
+
+- Controlled snow particles.
+- Reduced distant visibility.
+- Strong foreground silhouettes.
+- Slightly muted color palette.
+
+Do not make the snow particle system excessively expensive.
+
+### Variation D — Frozen Sunset
+
+- Warm orange horizon.
+- Blue snow shadows.
+- Long structural shadows.
+- Warm hangar lighting.
+
+## 7.3 Arctic asset library
+
+| Asset | Target triangles |
+| --- | --- |
+| Small snow rock | 8–20 |
+| Large snow rock | 15–35 |
+| Snow tree | 15–40 |
+| Military crate | 15–30 |
+| Snow-covered vehicle | 60–120 |
+| Hangar | 100–220 |
+| Barracks | 60–130 |
+| Radio tower | 70–120 |
+| Small generator | 25–50 |
+| Snow barrier | 12–25 |
+| Storage container | 30–55 |
+| Floodlight | 10–20 |
+| Bunker entrance | 35–70 |
+| Snow mound | 8–24 |
+| Warning sign | 4–10 |
+
+## 7.4 Arctic enemy integration
+
+**Standard enemies**
+
+- Frozen yard.
+- Service road.
+- Hangar entrance.
+- Storage yard.
+
+**Fast enemies**
+
+- Exterior open routes.
+- Frozen yard.
+- Service road.
+
+**Heavy enemies**
+
+- Frozen yard.
+- Hangar.
+- Wide service road.
+
+**Ranged enemies**
+
+- Open perimeter.
+- Hangar entrance.
+- Validated exterior positions.
+
+**Special enemies**
+
+- Check attack behavior against snow and environmental collision.
+- Ensure visual effects do not hide attack indicators.
+
+**Mini-bosses**
+
+- Frozen yard.
+- Hangar.
+
+**Bosses**
+
+- Dedicated frozen central yard arena.
+
+### Arctic-specific repairs
+
+- Snow must not cover or replace valid collision surfaces incorrectly.
+- Snow mounds must not accidentally block navigation.
+- Vehicles must have simplified collision.
+- Heavy enemies must not enter the narrow bunker.
+- Hangar doors must provide adequate clearance.
+- No enemy should slide uncontrollably because of decorative icy materials.
+- Ensure all exterior spawn points connect to the main playable area.
+
+---
+
+---
+
+# 8\. Complete map variation system
+
+The variations must be real playable variants, not simply five different lighting presets.
+
+Each main map should support at least three configurations.
+
+| Map | Variant 1 | Variant 2 | Variant 3 |
+| --- | --- | --- | --- |
+| Outpost | Desert Day | Sunset | Night Operation |
+| Facility | Operational | Lockdown | Containment Failure |
+| City | Daytime | Rain | Night |
+| Power Plant | Normal | Emergency | Power Failure |
+| Arctic | Clear Winter | Polar Night | Blizzard |
+
+## 8.1 What variations should change
+
+Each variation may change:
+
+- Lighting.
+- Skybox.
+- Environmental color.
+- Fog.
+- Particle effects.
+- Decorative props.
+- Selected cover placements.
+- Environmental damage.
+- Active lights.
+- Background ambience.
+- Nonessential doors.
+- Decorative machinery.
+- Selected spawn entrances.
+- Wave-specific environmental configuration.
+
+However, variations must not randomly invalidate the map's navigation.
+
+## 8.2 Layout variations
+
+Create two optional combat-layout configurations for each map.
+
+For example:
+
+**Outpost layout A**
+
+- Truck remains in northern yard.
+- Courtyard has two concrete barriers.
+- Western bunker entrance is open.
+
+**Outpost layout B**
+
+- Truck moves to the western edge.
+- Courtyard has a different cover arrangement.
+- Eastern storage entrance becomes a more prominent route.
+
+The changes must be validated against the enemy navigation system.
+
+Do not move critical geometry randomly every wave.
+
+Do not create inaccessible spaces.
+
+## 8.3 Variation selection
+
+The existing game should select a variation when the player enters the map.
+
+Use the existing map selection system if one exists.
+
+Avoid duplicating the entire map for each variation.
+
+Prefer shared geometry with configurable environment settings and controlled modular differences.
+
+---
+
+# 9\. Complete map-specific enemy compatibility system
+
+This system must be implemented separately for all five maps.
+
+The same enemy must not automatically use the same movement routes in every environment.
+
+## 9.1 Enemy compatibility data
+
+For each existing enemy, collect:
+
+- Enemy ID.
+- Model dimensions.
+- Collision radius.
+- Collision height.
+- Movement speed.
+- Movement type.
+- Turning requirements.
+- Navigation agent radius.
+- Navigation agent height.
+- Maximum supported slope.
+- Step height.
+- Attack range.
+- Attack animation space.
+- Special movement requirements.
+
+Use actual existing values.
+
+Do not create arbitrary new enemy statistics.
+
+## 9.2 Enemy route categories
+
+Create the following route categories:
+
+| Route | Intended use |
+| --- | --- |
+| STANDARD\_ROUTE | Ordinary enemies |
+| FAST\_ROUTE | Fast-moving enemies |
+| HEAVY\_ROUTE | Large enemies |
+| RANGED\_POSITION | Ranged enemy positioning |
+| SPECIAL\_ROUTE | Special movement abilities |
+| MINI\_BOSS\_ROUTE | Mini-boss access |
+| BOSS\_ROUTE | Dedicated boss navigation |
+
+Each map should contain separately validated route configurations.
+
+## 9.3 Map-specific restrictions
+
+Implement these restrictions:
+
+**Outpost**
+
+- Heavy enemies use the exterior routes.
+- Standard enemies may use the bunker if clearance permits.
+- Bosses use the courtyard.
+
+**Facility**
+
+- Heavy enemies use the containment and reactor chambers.
+- Standard enemies can use laboratory connections.
+- Bosses use the containment or expanded reactor arena.
+
+**City**
+
+- Heavy enemies use the main street and plaza.
+- Standard enemies can use validated building entrances.
+- Bosses use the plaza.
+
+**Power Plant**
+
+- Heavy enemies use the generator hall and turbine chamber.
+- Standard enemies use suitable maintenance connections.
+- Bosses use the turbine chamber.
+
+**Arctic**
+
+- Heavy enemies use the frozen yard and hangar.
+- Standard enemies can use validated barracks connections.
+- Bosses use the frozen yard.
+
+These are intended configurations, not claims that every existing enemy has already passed validation.
+
+## 9.4 Enemy spawn configuration
+
+Every spawn point should have:
+
+- Unique ID.
+- Map ID.
+- Position.
+- Rotation.
+- Enemy compatibility category.
+- Valid navigation area.
+- Clearance validation.
+- Minimum player distance.
+- Spawn capacity.
+- Wave eligibility.
+- Entrance reference.
+
+Before spawning an enemy:
+
+1. Check the position.
+2. Check ground contact.
+3. Check collision clearance.
+4. Check navigation availability.
+5. Check whether the enemy can reach the combat area.
+6. Check whether the spawn position overlaps another entity.
+7. Use another validated spawn point if necessary.
+
+Never repeatedly spawn enemies at an invalid location.
+
+## 9.5 Enemy stuck detection
+
+Inspect the existing AI before changing it.
+
+Detect:
+
+- No meaningful movement.
+- Invalid navigation destination.
+- Blocked route.
+- Collision with environment.
+- Repeated doorway obstruction.
+- Navigation failure.
+- Unreachable player position.
+
+Use an appropriate recovery process.
+
+Do not teleport enemies as the default solution.
+
+Fix the actual cause whenever possible.
+
+## 9.6 Boss arena validation
+
+Every boss arena must be tested using the actual boss model.
+
+Check:
+
+- Complete movement area.
+- Turning clearance.
+- Collision dimensions.
+- Attack animation clearance.
+- Ground contact.
+- Navigation boundaries.
+- Player accessibility.
+- Boss attack line of sight.
+- Arena boundary collision.
+- Death and cleanup behavior.
+
+Bosses must not be forced through ordinary enemy navigation routes.
+
+---
+
+# 10\. Extremely low-poly master asset library
+
+Create one reusable asset library for the complete game.
+
+Do not create five separate versions of the same generic crate or barrel unless the visual differences are genuinely necessary.
+
+## 10.1 Shared environment assets
+
+| Asset | Triangle target |
+| --- | --- |
+| Small crate | 12–20 |
+| Large crate | 20–30 |
+| Barrel | 12–20 |
+| Concrete barrier | 12–24 |
+| Small rock | 8–16 |
+| Large rock | 16–30 |
+| Small debris | 4–10 |
+| Large debris | 10–20 |
+| Small lamp | 6–12 |
+| Streetlight | 12–30 |
+| Small cabinet | 12–20 |
+| Large cabinet | 20–35 |
+| Simple table | 12–24 |
+| Simple chair | 10–18 |
+| Metal door | 8–18 |
+| Window frame | 8–16 |
+| Small generator | 25–45 |
+| Industrial container | 30–55 |
+| Fence section | 8–18 |
+| Small sign | 4–10 |
+| Supply box | 12–24 |
+
+These assets should be shared across maps wherever visually appropriate.
+
+## 10.2 Important geometry rules
+
+Every asset must follow these rules:
+
+1. No unnecessary subdivisions.
+2. No excessive bevels.
+3. No detailed internal geometry.
+4. No hidden surfaces that are never rendered.
+5. No unnecessary individual bolts.
+6. No individually modeled tiny scratches.
+7. No realistic high-resolution cables.
+8. No dense cylindrical meshes.
+9. No excessive material slots.
+10. No unnecessarily complex collision.
+
+For example, instead of creating a barrel with a high-resolution cylindrical mesh, use a low-sided angular cylinder with a simplified top and bottom.
+
+Instead of modeling every sandbag independently, create a small number of reusable angular sandbag shapes.
+
+Instead of modeling individual small stones, create several reusable low-poly rock meshes.
+
+## 10.3 LOD system
+
+Use three detail levels where appropriate.
+
+**LOD 0 — Near**
+
+- Full intended low-poly geometry.
+- Used near the player.
+- Preserves recognizable silhouette.
+
+**LOD 1 — Medium**
+
+- Simplified geometry.
+- Fewer visible structural details.
+- Used at medium distances.
+
+**LOD 2 — Far**
+
+- Extremely simplified silhouette.
+- Minimal geometry.
+- Used at long distances.
+
+Do not create an expensive LOD system for every tiny object if the original object is already extremely inexpensive.
+
+## 10.4 Rendering optimization
+
+Use:
+
+- Shared materials.
+- Static batching where appropriate.
+- Instanced repeated props.
+- Frustum culling.
+- Occlusion culling where supported.
+- Efficient shadow settings.
+- Simplified collision.
+- Limited dynamic lights.
+- Reused particle systems.
+
+Avoid excessive real-time shadows from every small object.
+
+## 10.5 Environmental particle budgets
+
+Keep particle effects controlled.
+
+Suggested starting maximums:
+
+| Effect | Starting active-particle target |
+| --- | --- |
+| Dust | 30–80 |
+| Snow | 50–120 |
+| Rain | 50–150 |
+| Small sparks | 10–30 |
+| Smoke | 15–40 |
+| Small debris | 10–25 |
+
+These are tuning targets, not mandatory engine limits.
+
+Use pooling where appropriate.
+
+Avoid spawning and destroying large numbers of particle objects every frame.
+
+---
+
+# 11\. Exact gameplay and combat-flow requirements
+
+Every map should have distinct combat flow.
+
+Do not create five maps that are just rectangular rooms with different materials.
+
+## 11.1 Combat-space composition
+
+Every map needs:
+
+- One main arena.
+- One secondary combat area.
+- At least two useful alternate routes.
+- Multiple validated spawn entrances.
+- A mixture of short and medium engagement distances.
+- Cover that does not completely obstruct movement.
+- Clear landmarks.
+- Safe transitions between combat zones.
+- Dedicated boss-compatible space.
+
+## 11.2 Cover placement
+
+Use three cover types.
+
+**Low cover**
+
+Examples:
+
+- Sandbags.
+- Small concrete blocks.
+- Short crates.
+
+Purpose:
+
+- Partial protection.
+- Short movement interruptions.
+- Visual variation.
+
+**Medium cover**
+
+Examples:
+
+- Concrete barriers.
+- Vehicle sections.
+- Industrial equipment.
+
+Purpose:
+
+- Tactical repositioning.
+- Breaking line of sight.
+- Creating combat lanes.
+
+**Large cover**
+
+Examples:
+
+- Trucks.
+- Buildings.
+- Machinery.
+- Large containers.
+
+Purpose:
+
+- Dividing large combat areas.
+- Creating distinct movement routes.
+- Establishing landmarks.
+
+Do not surround every enemy with cover.
+
+Do not place cover in ways that permanently block all enemy routes.
+
+## 11.3 Player navigation
+
+The player must have:
+
+- Clear entrances.
+- Readable exits.
+- Predictable floor surfaces.
+- Proper stair connections.
+- Correct collision.
+- No accidental fall-through areas.
+- No unintended out-of-bounds routes.
+- Sufficient room to use weapons.
+- No camera clipping through critical geometry.
+
+## 11.4 Combat visibility
+
+Enemies must be readable against the environment.
+
+For each map:
+
+- Check enemy silhouettes at short range.
+- Check enemy silhouettes at medium range.
+- Check enemy silhouettes in darker areas.
+- Check enemies against background structures.
+- Check particle effects.
+- Check boss attack visibility.
+
+Do not use environmental colors that make every enemy blend into the background.
+
+---
+
+# 12\. Map-specific wave-survival integration
+
+Use the existing wave manager.
+
+Do not create a second wave manager.
+
+Each map should have its own wave configuration that references existing enemy definitions.
+
+## 12.1 Wave configuration
+
+Every map should define:
+
+- Available spawn zones.
+- Compatible enemy types.
+- Available combat areas.
+- Mini-boss arena.
+- Boss arena.
+- Valid enemy routes.
+- Environmental variation.
+- Spawn timing configuration.
+
+## 12.2 Difficulty progression
+
+The maps should remain playable across early, middle and late waves.
+
+**Early waves**
+
+- Primarily standard enemies.
+- Simple spawn combinations.
+- Clear enemy entrances.
+- Plenty of movement space.
+
+**Middle waves**
+
+- More varied enemy compositions.
+- Multiple spawn entrances.
+- Increased pressure.
+- More use of alternate routes.
+
+**Late waves**
+
+- Appropriate combinations of heavy, ranged and special enemies.
+- Higher crowd density.
+- Greater pressure on movement and positioning.
+
+**Mini-boss waves**
+
+- Validated mini-boss routes.
+- Sufficient arena space.
+- Appropriate supporting enemies.
+
+**Boss waves**
+
+- Dedicated arena.
+- Compatible spawn locations.
+- No invalid enemy combinations.
+- Clear boss visibility.
+- Reliable boss navigation.
+
+Do not invent new enemy health, speed or damage values in the map-design task.
+
+---
+
+# 13\. Map production and implementation structure
+
+Use a clean naming convention.
+
+Suggested hierarchy:
+
+text
+
+```text
+GAME
+|
++-- MAPS
+|   |
+|   +-- OUTPOST_01
+|   |   +-- Geometry
+|   |   +-- Buildings
+|   |   +-- Props
+|   |   +-- Lighting
+|   |   +-- SpawnPoints
+|   |   +-- Navigation
+|   |   +-- EnemyZones
+|   |   +-- CombatAreas
+|   |   +-- Variations
+|   |
+|   +-- FACILITY_02
+|   |
+|   +-- CITY_03
+|   |
+|   +-- POWER_04
+|   |
+|   +-- ARCTIC_05
+|
++-- SHARED_ASSETS
+|   +-- Crates
+|   +-- Barrels
+|   +-- Concrete
+|   +-- Industrial
+|   +-- Military
+|   +-- Vegetation
+|   +-- Vehicles
+|   +-- Lighting
+|
++-- EXISTING_ENEMIES
+|
++-- EXISTING_PLAYER
+|
++-- EXISTING_WAVE_SYSTEM
+|
++-- SHARED_MATERIALS
+|
++-- SHARED_COLLISION
+```
+
+Adapt this structure to the actual engine and project architecture. Do not reorganize working systems unnecessarily.
+
+---
+
+# 14\. Testing and quality assurance
+
+Each map must pass a separate test.
+
+## 14.1 Geometry validation
+
+- [ ]All new environment assets are genuinely low-poly.
+- [ ]Triangle counts are measured.
+- [ ]No unnecessary subdivision exists.
+- [ ]No excessively detailed imported assets remain.
+- [ ]Materials are reused.
+- [ ]Collision geometry is simplified.
+- [ ]Distant assets use appropriate LOD.
+- [ ]Silhouettes remain recognizable.
+
+## 14.2 Level-design validation
+
+- [ ]Main arena is playable.
+- [ ]Secondary arena is playable.
+- [ ]Alternate routes connect correctly.
+- [ ]Player cannot fall through floors.
+- [ ]Doors and stairs connect correctly.
+- [ ]No accidental out-of-bounds areas.
+- [ ]No unnecessary dead ends.
+- [ ]Cover placement is useful.
+- [ ]Landmarks are recognizable.
+- [ ]Boss area has adequate clearance.
+
+## 14.3 Enemy validation
+
+- [ ]Standard enemies spawn correctly.
+- [ ]Fast enemies use appropriate routes.
+- [ ]Heavy enemies avoid unsuitable passages.
+- [ ]Ranged enemies have valid positions.
+- [ ]Special enemies have adequate attack space.
+- [ ]Mini-bosses navigate correctly.
+- [ ]Bosses navigate correctly.
+- [ ]No enemy spawns inside walls.
+- [ ]No enemy becomes permanently stuck.
+- [ ]No enemy repeatedly collides with props.
+- [ ]Enemy collision is correctly configured.
+- [ ]Wave progression works.
+
+## 14.4 Variation validation
+
+Test every map variation.
+
+Do not assume that the base map working means all variants work.
+
+Check:
+
+- Lighting.
+- Visibility.
+- Collision.
+- Navigation.
+- Spawn positions.
+- Environmental effects.
+- Boss arena.
+- Enemy readability.
+- Performance.
+
+---
+
+# 15\. Required production sequence
+
+Implement the maps in the following order.
+
+**PHASE 1 — Project inspection**
+
+Inspect the existing project and document existing systems.
+
+**PHASE 2 — Asset optimization**
+
+Create the shared extremely low-poly asset library.
+
+**PHASE 3 — Outpost blockout**
+
+Build the complete military outpost using simple geometry.
+
+**PHASE 4 — Outpost finalization**
+
+Complete its assets, lighting, combat areas, spawn points and enemy integration.
+
+**PHASE 5 — Outpost variations**
+
+Create Desert Day, Sunset and Night Operation.
+
+**PHASE 6 — Facility**
+
+Build and test the underground research facility.
+
+**PHASE 7 — Facility variations**
+
+Create Operational, Emergency Lockdown and Containment Failure.
+
+**PHASE 8 — City**
+
+Build and test the ruined city district.
+
+**PHASE 9 — City variations**
+
+Create Daytime, Rain and Night.
+
+**PHASE 10 — Power Plant**
+
+Build and test the industrial environment.
+
+**PHASE 11 — Power Plant variations**
+
+Create Normal Operation, Emergency and Power Failure.
+
+**PHASE 12 — Arctic Base**
+
+Build and test the frozen military installation.
+
+**PHASE 13 — Arctic variations**
+
+Create Clear Winter, Polar Night and Blizzard.
+
+**PHASE 14 — Global enemy testing**
+
+Test every compatible existing enemy in every map.
+
+**PHASE 15 — Optimization**
+
+Optimize geometry, materials, collision, navigation, lighting and particles.
+
+**PHASE 16 — Full gameplay testing**
+
+Play through the complete wave-survival loop on every map and variation.
+
+---
+
+# 16\. Final master instructions to Gemini Argon
+
+The most important requirements are:
+
+1. Build all five maps inside the existing game.
+2. Give each map a genuinely different layout and gameplay identity.
+3. Include multiple environmental variations for every map.
+4. Use extremely low-poly geometry throughout.
+5. Build reusable modular assets instead of generating hundreds of unnecessary unique models.
+6. Measure triangle counts rather than guessing.
+7. Use simple collision geometry.
+8. Create separate enemy compatibility configurations for every map.
+9. Fix enemy spawning and navigation.
+10. Prevent large enemies from entering unsuitable spaces.
+11. Give every mini-boss and boss an appropriate arena.
+12. Test every variation independently.
+13. Preserve all functioning existing gameplay systems.
+14. Optimize performance without sacrificing essential gameplay readability.
+15. Complete and validate each map before moving to the next.
+
+\</WritingBlock\>
+
+## 17\. Additional visual references for the five-map collection
+
+These are useful as visual direction when Gemini creates the environments.
+
+\<grid columns={2} gap={3}\> \<grid-item\> \<AsyncImage query="low poly desert military outpost game environment" aspectRatio="5:4" width="100%"/\> \*\*01. Abandoned Outpost\*\*
+
+```
+Angular military architecture, sand, vehicles and concrete.
+```
+
+\</grid-item\> \<grid-item\> \<AsyncImage query="low poly underground futuristic research facility game environment" aspectRatio="5:4" width="100%"/\> \*\*02. Research Facility\*\*
+
+```
+Modular laboratory geometry and industrial containment.
+```
+
+\</grid-item\> \<grid-item\> \<AsyncImage query="low poly post apocalyptic ruined city game environment" aspectRatio="5:4" width="100%"/\> \*\*03. Ruined City\*\*
+
+```
+Distinctive buildings, simplified vehicles and open roads.
+```
+
+\</grid-item\> \<grid-item\> \<AsyncImage query="low poly industrial power station game environment" aspectRatio="5:4" width="100%"/\> \*\*04. Power Plant\*\*
+
+```
+Angular machinery, tanks, pipes and large halls.
+```
+
+\</grid-item\> \<grid-item\> \<AsyncImage query="low poly arctic military base snowy game environment" aspectRatio="5:4" width="100%"/\> \*\*05. Arctic Base\*\*
+
+```
+Snowfields, hangars, bunkers and frozen structures.
+```
+
+\</grid-item\> \</grid\>
+
+## 18\. My most important recommendation: enforce actual triangle budgets
+
+There is a difference between a low-poly-looking asset and an asset that is actually low-poly.
+
+For this project, I would use the following additional strict targets:
+
+| Asset | Preferred target |
+| --- | --- |
+| Small crate | 12–20 triangles |
+| Barrel | 12–20 triangles |
+| Small rock | 8–16 triangles |
+| Sandbag section | 12–20 triangles |
+| Concrete barrier | 12–24 triangles |
+| Streetlight | 12–30 triangles |
+| Small furniture | 10–25 triangles |
+| Small machinery | 20–45 triangles |
+| Vehicle | 50–100 triangles |
+| Small building | 60–130 triangles |
+| Large building | 120–250 triangles |
+| Large landmark | 150–300 triangles |
+
+These are triangle budgets, not vertex budgets.
+
+**Do not let Gemini solve the low-poly requirement by simply reducing texture resolution. The actual mesh geometry must be simplified.**
+
+My recommendation is to finish the Outpost first, including all three variations and its complete enemy compatibility testing. Once that is working, use its asset library, geometry standards and optimization settings as the foundation for the remaining four maps.

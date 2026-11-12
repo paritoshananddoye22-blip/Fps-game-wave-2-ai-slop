@@ -3,6 +3,7 @@ import {
   AssaultRifleTriangleBreakdown,
   InspectionViewMode,
   RevolverTriangleBreakdown,
+  ShotgunTriangleBreakdown,
   WeaponProceduralState,
 } from './types';
 import {
@@ -18,10 +19,14 @@ export const AR_BARREL_AXIS_Y = 0.026;
 export const REV_SIGHT_AXIS_Y = 0.064;
 export const REV_BARREL_AXIS_Y = 0.028;
 
+export const SG_SIGHT_AXIS_Y = 0.066;
+export const SG_BARREL_AXIS_Y = 0.028;
+
 export interface WeaponRig {
   root: THREE.Group;
   assaultRifleGroup: THREE.Group;
   revolverGroup: THREE.Group;
+  shotgunGroup: THREE.Group;
   arMagazine: THREE.Object3D;
   arChargingHandle: THREE.Object3D;
   arTrigger: THREE.Object3D;
@@ -34,13 +39,21 @@ export interface WeaponRig {
   revMuzzlePoint: THREE.Object3D;
   revRearSightRef: THREE.Object3D;
   revFrontSightRef: THREE.Object3D;
+  sgForeEndPivot: THREE.Object3D;
+  sgShellGroup: THREE.Object3D;
+  sgTrigger: THREE.Object3D;
+  sgMuzzlePoint: THREE.Object3D;
+  sgRearSightRef: THREE.Object3D;
+  sgFrontSightRef: THREE.Object3D;
   muzzleFlashMesh: THREE.Mesh;
   muzzleLight: THREE.PointLight;
   handsRig: FirstPersonHandsRig;
   arTriangleCount: number;
   revTriangleCount: number;
+  sgTriangleCount: number;
   arBreakdown: AssaultRifleTriangleBreakdown;
   revBreakdown: RevolverTriangleBreakdown;
+  sgBreakdown: ShotgunTriangleBreakdown;
   leftHandTriangleCount: number;
   rightHandTriangleCount: number;
 }
@@ -126,6 +139,39 @@ export function computeRevolverBreakdown(
     if ((obj as THREE.Mesh).isMesh && !obj.userData.ignoreBudget) {
       const t = countMeshTrianglesSingle(obj as THREE.Mesh);
       const cat = obj.userData.componentCategory as keyof RevolverTriangleBreakdown | undefined;
+      if (cat && cat !== 'total' && cat in b) {
+        b[cat] += t;
+      } else {
+        b.remaining += t;
+      }
+      b.total += t;
+    }
+  });
+  return b;
+}
+
+/**
+ * Computes the component-by-component triangle breakdown for the Pump-Action Combat Shotgun (< 150 triangles).
+ */
+export function computeShotgunBreakdown(
+  root: THREE.Object3D
+): ShotgunTriangleBreakdown {
+  const b: ShotgunTriangleBreakdown = {
+    receiver: 0,
+    barrel: 0,
+    foreEnd: 0,
+    stock: 0,
+    grip: 0,
+    lowerTube: 0,
+    frontSight: 0,
+    rearSight: 0,
+    remaining: 0,
+    total: 0,
+  };
+  root.traverse((obj) => {
+    if ((obj as THREE.Mesh).isMesh && !obj.userData.ignoreBudget) {
+      const t = countMeshTrianglesSingle(obj as THREE.Mesh);
+      const cat = obj.userData.componentCategory as keyof ShotgunTriangleBreakdown | undefined;
       if (cat && cat !== 'total' && cat in b) {
         b[cat] += t;
       } else {
@@ -1221,8 +1267,458 @@ export function buildRevolverMesh(): {
 }
 
 /**
+ * Builds the Complete Low-Poly Pump-Action Combat Shotgun (`SG-12 BREACHER`)
+ * Strictly under 150 polygons/triangles (Exact Allocated Total: 142 triangles).
+ *
+ * Component Allocation:
+ * - Receiver (Upper Receiver 12 + Lower Receiver 12 + Top Sight Deck 8): 32 tris
+ * - Barrel & Muzzle (6-Sided Heavy Combat Barrel 12 + Muzzle Crown 4 + Recessed Dark Bore 2): 18 tris
+ * - Pump Fore-End (Animated Ribbed Polymer Fore-End 12 + Slide Action Bar 8): 20 tris
+ * - Stock (Tapered Tactical Buttstock 12 + Rubberized Buttpad 6): 18 tris
+ * - Rear Grip (Ergonomic Angled Pistol Grip 12): 12 tris
+ * - Lower Magazine Tube (6-Sided Under-Barrel Tube 12 + Front Cap 2): 14 tris
+ * - Rear Iron Sight (Ghost-Ring / Open U-Notch Base 2 + Left Ear 3 + Right Ear 3): 8 tris
+ * - Front Iron Sight (Ramped Base 4 + Vertical Post 2 + High-Contrast Orange Bead 2): 8 tris
+ * - Remaining (Trigger Guard 6 + Articulated Trigger Blade 4 + Ejection/Loading Port Accent 2): 12 tris
+ * TOTAL = 142 triangles (strictly < 150 limit).
+ * Plus a separate 10-triangle Shell Visual (`sgShellGroup`) shown during individual shell reloads.
+ */
+export function buildShotgunMesh(): {
+  group: THREE.Group;
+  foreEndPivot: THREE.Object3D;
+  shellGroup: THREE.Object3D;
+  trigger: THREE.Object3D;
+  muzzlePoint: THREE.Object3D;
+  rearSightRef: THREE.Object3D;
+  frontSightRef: THREE.Object3D;
+} {
+  const group = new THREE.Group();
+  group.name = 'Shotgun';
+
+  // Controlled Shotgun Palette (MAT_SG_GUNMETAL, MAT_SG_BARREL, MAT_SG_POLYMER, MAT_SG_GRIP, MAT_SG_ACCENT, MAT_SG_SHELL)
+  const matSgGunmetal = new THREE.MeshStandardMaterial({
+    color: 0x2b313b,
+    roughness: 0.42,
+    metalness: 0.72,
+    flatShading: true,
+  });
+  const matSgBarrel = new THREE.MeshStandardMaterial({
+    color: 0x4b5668,
+    roughness: 0.3,
+    metalness: 0.84,
+    flatShading: true,
+  });
+  const matSgPolymer = new THREE.MeshStandardMaterial({
+    color: 0x1a1e26,
+    roughness: 0.72,
+    metalness: 0.22,
+    flatShading: true,
+  });
+  const matSgGrip = new THREE.MeshStandardMaterial({
+    color: 0x3b2a20,
+    roughness: 0.78,
+    metalness: 0.12,
+    flatShading: true,
+  });
+  const matSgBore = new THREE.MeshStandardMaterial({
+    color: 0x080a0d,
+    roughness: 0.95,
+    metalness: 0.1,
+    flatShading: true,
+  });
+  const matSgAccent = new THREE.MeshStandardMaterial({
+    color: 0xff6b2b,
+    roughness: 0.28,
+    metalness: 0.25,
+    emissive: 0x9a3412,
+    emissiveIntensity: 0.8,
+    flatShading: true,
+  });
+  const matSgShellHull = new THREE.MeshStandardMaterial({
+    color: 0xdc2626,
+    roughness: 0.45,
+    metalness: 0.15,
+    flatShading: true,
+  });
+  const matSgShellBrass = new THREE.MeshStandardMaterial({
+    color: 0xf59e0b,
+    roughness: 0.25,
+    metalness: 0.88,
+    flatShading: true,
+  });
+
+  // =========================================================================
+  // 1. RECEIVER (32 tris: Upper Receiver 12 + Lower Receiver 12 + Top Deck 8)
+  // =========================================================================
+  const upperReceiver = tagCategory(
+    new THREE.Mesh(
+      createTaperedHexahedron(0.052, 0.044, 0.056, 0.048, 0.22, 0, 0.002),
+      matSgGunmetal
+    ),
+    'receiver'
+  );
+  upperReceiver.position.set(0, 0.016, 0.0);
+  group.add(upperReceiver);
+
+  const lowerReceiver = tagCategory(
+    new THREE.Mesh(
+      createTaperedHexahedron(0.048, 0.026, 0.05, 0.03, 0.19, 0, -0.002),
+      matSgPolymer
+    ),
+    'receiver'
+  );
+  lowerReceiver.position.set(0, -0.016, 0.008);
+  group.add(lowerReceiver);
+
+  const topDeck = tagCategory(
+    new THREE.Mesh(
+      createOpenSleeve(0.036, 0.01, 0.04, 0.01, 0.21, 0, 0),
+      matSgGunmetal
+    ),
+    'receiver'
+  );
+  topDeck.position.set(0, 0.044, 0.0);
+  group.add(topDeck);
+
+  // =========================================================================
+  // 2. BARREL & MUZZLE (18 tris: 6-sided Heavy Barrel 12 + Muzzle Crown 4 + Bore 2)
+  // =========================================================================
+  const barrelGeom = new THREE.CylinderGeometry(0.016, 0.0175, 0.44, 6, 1, true);
+  barrelGeom.rotateX(Math.PI * 0.5);
+  const barrelMesh = tagCategory(
+    new THREE.Mesh(barrelGeom, matSgBarrel),
+    'barrel'
+  );
+  barrelMesh.position.set(0, SG_BARREL_AXIS_Y, -0.32);
+  group.add(barrelMesh);
+
+  const sgMuzzleVerts = [
+    [-0.012, -0.012, -0.542],
+    [0.012, -0.012, -0.542],
+    [0.012, 0.012, -0.542],
+    [-0.012, 0.012, -0.542],
+    [-0.015, -0.015, -0.534],
+    [0.015, -0.015, -0.534],
+    [0.015, 0.015, -0.534],
+    [-0.015, 0.015, -0.534],
+  ];
+  const sgMuzzleCrown = tagCategory(
+    new THREE.Mesh(
+      buildIndexedFlatGeometry(sgMuzzleVerts, [
+        3, 6, 2,
+        0, 1, 5,
+        1, 2, 6,
+        4, 7, 3,
+      ]),
+      matSgGunmetal
+    ),
+    'barrel'
+  );
+  sgMuzzleCrown.position.set(0, SG_BARREL_AXIS_Y, 0);
+  group.add(sgMuzzleCrown);
+
+  const sgBoreFace = tagCategory(
+    new THREE.Mesh(
+      buildIndexedFlatGeometry(
+        [
+          [-0.011, -0.011, -0.5425],
+          [0.011, -0.011, -0.5425],
+          [0.011, 0.011, -0.5425],
+          [-0.011, 0.011, -0.5425],
+        ],
+        [0, 2, 1, 0, 3, 2]
+      ),
+      matSgBore
+    ),
+    'barrel'
+  );
+  sgBoreFace.position.set(0, SG_BARREL_AXIS_Y, 0);
+  group.add(sgBoreFace);
+
+  // =========================================================================
+  // 3. LOWER MAGAZINE TUBE (14 tris: 6-sided Tube 12 + Front Cap 2)
+  // =========================================================================
+  const lowerTubeGeom = new THREE.CylinderGeometry(0.014, 0.014, 0.37, 6, 1, true);
+  lowerTubeGeom.rotateX(Math.PI * 0.5);
+  const lowerTubeMesh = tagCategory(
+    new THREE.Mesh(lowerTubeGeom, matSgGunmetal),
+    'lowerTube'
+  );
+  lowerTubeMesh.position.set(0, -0.004, -0.285);
+  group.add(lowerTubeMesh);
+
+  const tubeCapMesh = tagCategory(
+    new THREE.Mesh(
+      buildIndexedFlatGeometry(
+        [
+          [-0.012, -0.016, -0.471],
+          [0.012, -0.016, -0.471],
+          [0.012, 0.008, -0.471],
+          [-0.012, 0.008, -0.471],
+        ],
+        [0, 2, 1, 0, 3, 2]
+      ),
+      matSgBarrel
+    ),
+    'lowerTube'
+  );
+  group.add(tubeCapMesh);
+
+  // =========================================================================
+  // 4. ANIMATED PUMP FORE-END (20 tris: Ribbed Fore-End 12 + Slide Action Rail 8)
+  // =========================================================================
+  const foreEndPivot = new THREE.Group();
+  foreEndPivot.name = 'ShotgunForeEndPivot';
+  foreEndPivot.position.set(0, -0.008, -0.255);
+
+  const foreEndBody = tagCategory(
+    new THREE.Mesh(
+      createTaperedHexahedron(0.056, 0.044, 0.06, 0.048, 0.175, 0, -0.002),
+      matSgGrip
+    ),
+    'foreEnd'
+  );
+  foreEndPivot.add(foreEndBody);
+
+  const foreEndRail = tagCategory(
+    new THREE.Mesh(
+      createOpenSleeve(0.038, 0.014, 0.038, 0.014, 0.16, 0, 0),
+      matSgPolymer
+    ),
+    'foreEnd'
+  );
+  foreEndRail.position.set(0, 0.018, 0.03);
+  foreEndPivot.add(foreEndRail);
+
+  group.add(foreEndPivot);
+
+  // =========================================================================
+  // 5. STOCK (18 tris: Tactical Buttstock 12 + Rubberized Buttpad 6)
+  // =========================================================================
+  const stockBody = tagCategory(
+    new THREE.Mesh(
+      createTaperedHexahedron(0.046, 0.056, 0.048, 0.092, 0.22, 0, -0.022),
+      matSgPolymer
+    ),
+    'stock'
+  );
+  stockBody.position.set(0, -0.012, 0.215);
+  group.add(stockBody);
+
+  const stockPad = tagCategory(
+    new THREE.Mesh(
+      createChannel(0.05, 0.096, 0.024, 'bottom'),
+      matSgGrip
+    ),
+    'stock'
+  );
+  stockPad.position.set(0, -0.034, 0.332);
+  group.add(stockPad);
+
+  // =========================================================================
+  // 6. REAR GRIP (12 tris: Swept Angled Pistol Grip)
+  // =========================================================================
+  const rearGrip = tagCategory(
+    new THREE.Mesh(
+      createTaperedHexahedron(0.038, 0.048, 0.042, 0.054, 0.115, 0, -0.034),
+      matSgGrip
+    ),
+    'grip'
+  );
+  rearGrip.rotation.x = Math.PI * 0.34;
+  rearGrip.position.set(0, -0.068, 0.118);
+  group.add(rearGrip);
+
+  // =========================================================================
+  // 7. REAR IRON SIGHT (8 tris: Base 2 + Left Notch Ear 3 + Right Notch Ear 3)
+  //    Calibrated to X = 0.000, Y = SG_SIGHT_AXIS_Y = 0.066, Z = +0.065
+  // =========================================================================
+  const sgRearZ = 0.065;
+  const sgNotchFloorY = 0.053;
+  const sgSightTopY = SG_SIGHT_AXIS_Y + 0.002;
+  const sgNotchHalfW = 0.0065;
+  const sgEarOuterW = 0.016;
+
+  const sgRearVerts = [
+    [-sgEarOuterW, sgNotchFloorY, sgRearZ + 0.008], // 0
+    [sgEarOuterW, sgNotchFloorY, sgRearZ + 0.008], // 1
+    [sgEarOuterW, sgNotchFloorY, sgRearZ - 0.008], // 2
+    [-sgEarOuterW, sgNotchFloorY, sgRearZ - 0.008], // 3
+    [-sgEarOuterW, sgSightTopY, sgRearZ + 0.008], // 4
+    [-sgNotchHalfW, sgSightTopY, sgRearZ + 0.008], // 5
+    [-sgNotchHalfW, sgNotchFloorY, sgRearZ + 0.008], // 6
+    [-sgNotchHalfW, sgSightTopY, sgRearZ - 0.008], // 7
+    [sgNotchHalfW, sgSightTopY, sgRearZ + 0.008], // 8
+    [sgEarOuterW, sgSightTopY, sgRearZ + 0.008], // 9
+    [sgNotchHalfW, sgNotchFloorY, sgRearZ + 0.008], // 10
+    [sgNotchHalfW, sgSightTopY, sgRearZ - 0.008], // 11
+  ];
+  const sgRearIndices = [
+    // Central notch floor (2 tris)
+    6, 10, 2, 6, 2, 3,
+    // Left Sight Ear (3 tris)
+    0, 6, 5, 0, 5, 4,
+    6, 7, 5,
+    // Right Sight Ear (3 tris)
+    10, 1, 9, 10, 9, 8,
+    10, 8, 11,
+  ];
+  const sgRearSight = tagCategory(
+    new THREE.Mesh(
+      buildIndexedFlatGeometry(sgRearVerts, sgRearIndices),
+      matSgBore
+    ),
+    'rearSight'
+  );
+  group.add(sgRearSight);
+
+  // =========================================================================
+  // 8. FRONT IRON SIGHT (8 tris: Ramped Base 4 + Post 2 + Orange Bead Tip 2)
+  //    Calibrated to X = 0.000, Y = SG_SIGHT_AXIS_Y = 0.066, Z = -0.495
+  // =========================================================================
+  const sgFrontZ = -0.495;
+  const sgPostHalfW = 0.003;
+  const sgFrontBaseVerts = [
+    [-0.006, 0.044, sgFrontZ + 0.01], // 0
+    [0.006, 0.044, sgFrontZ + 0.01], // 1
+    [sgPostHalfW, 0.056, sgFrontZ + 0.004], // 2
+    [-sgPostHalfW, 0.056, sgFrontZ + 0.004], // 3
+    [-0.006, 0.044, sgFrontZ - 0.016], // 4
+    [0.006, 0.044, sgFrontZ - 0.016], // 5
+    [-sgPostHalfW, 0.061, sgFrontZ + 0.004], // 6
+    [sgPostHalfW, 0.061, sgFrontZ + 0.004], // 7
+  ];
+  const sgFrontBaseMesh = tagCategory(
+    new THREE.Mesh(
+      buildIndexedFlatGeometry(sgFrontBaseVerts, [
+        0, 1, 2, 0, 2, 3, // Base rear face (2 tris)
+        1, 5, 2, // Right ramp (1 tri)
+        4, 0, 3, // Left ramp (1 tri)
+        3, 2, 7, 3, 7, 6, // Upper post column (2 tris)
+      ]),
+      matSgGunmetal
+    ),
+    'frontSight'
+  );
+  group.add(sgFrontBaseMesh);
+
+  const sgFrontBeadMesh = tagCategory(
+    new THREE.Mesh(
+      buildIndexedFlatGeometry(
+        [
+          [-sgPostHalfW, 0.061, sgFrontZ + 0.0045],
+          [sgPostHalfW, 0.061, sgFrontZ + 0.0045],
+          [sgPostHalfW, SG_SIGHT_AXIS_Y, sgFrontZ + 0.0045],
+          [-sgPostHalfW, SG_SIGHT_AXIS_Y, sgFrontZ + 0.0045],
+        ],
+        [0, 1, 2, 0, 2, 3]
+      ),
+      matSgAccent
+    ),
+    'frontSight'
+  );
+  group.add(sgFrontBeadMesh);
+
+  // =========================================================================
+  // 9. REMAINING (12 tris: Trigger Guard 6 + Trigger Blade 4 + Port Accent 2)
+  // =========================================================================
+  const sgGuard = tagCategory(
+    new THREE.Mesh(
+      createChannel(0.018, 0.026, 0.056, 'bottom'),
+      matSgPolymer
+    ),
+    'remaining'
+  );
+  sgGuard.position.set(0, -0.042, 0.048);
+  group.add(sgGuard);
+
+  const sgTrigger = tagCategory(
+    new THREE.Mesh(
+      buildIndexedFlatGeometry(
+        [
+          [-0.004, 0, -0.005],
+          [0.004, 0, -0.005],
+          [0.004, -0.02, 0.006],
+          [-0.004, -0.02, 0.006],
+        ],
+        [0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2]
+      ),
+      matSgBarrel
+    ),
+    'remaining'
+  );
+  sgTrigger.position.set(0, -0.028, 0.052);
+  group.add(sgTrigger);
+
+  const sgPortAccent = tagCategory(
+    new THREE.Mesh(
+      buildIndexedFlatGeometry(
+        [
+          [0.0285, 0.008, -0.055],
+          [0.0285, 0.028, -0.055],
+          [0.0285, 0.028, 0.015],
+          [0.0285, 0.008, 0.015],
+        ],
+        [0, 2, 1, 0, 3, 2]
+      ),
+      matSgAccent
+    ),
+    'remaining'
+  );
+  group.add(sgPortAccent);
+
+  // =========================================================================
+  // 10. SEPARATE 12-GAUGE SHELL VISUAL FOR INDIVIDUAL SHELL RELOAD (10 tris)
+  //     (Marked ignoreBudget = true so weapon mesh stays strictly 142 tris)
+  // =========================================================================
+  const shellGroup = new THREE.Group();
+  shellGroup.name = 'ShotgunShellVisual';
+  shellGroup.visible = false;
+
+  const hullGeom = new THREE.CylinderGeometry(0.0105, 0.0105, 0.048, 3, 1, true);
+  hullGeom.rotateX(Math.PI * 0.5);
+  const hullMesh = new THREE.Mesh(hullGeom, matSgShellHull);
+  hullMesh.userData.ignoreBudget = true;
+  shellGroup.add(hullMesh);
+
+  const brassGeom = new THREE.CylinderGeometry(0.0112, 0.0112, 0.016, 2, 1, true);
+  brassGeom.rotateX(Math.PI * 0.5);
+  const brassMesh = new THREE.Mesh(brassGeom, matSgShellBrass);
+  brassMesh.position.set(0, 0, 0.028);
+  brassMesh.userData.ignoreBudget = true;
+  shellGroup.add(brassMesh);
+
+  group.add(shellGroup);
+
+  // Reference anchor points for Muzzle (`SHOTGUN_MUZZLE_POINT`), Rear Sight, and Front Sight
+  const muzzlePoint = new THREE.Object3D();
+  muzzlePoint.name = 'SHOTGUN_MUZZLE_POINT';
+  muzzlePoint.position.set(0, SG_BARREL_AXIS_Y, -0.55);
+  group.add(muzzlePoint);
+
+  const rearSightRef = new THREE.Object3D();
+  rearSightRef.position.set(0, SG_SIGHT_AXIS_Y, sgRearZ);
+  group.add(rearSightRef);
+
+  const frontSightRef = new THREE.Object3D();
+  frontSightRef.position.set(0, SG_SIGHT_AXIS_Y, sgFrontZ);
+  group.add(frontSightRef);
+
+  return {
+    group,
+    foreEndPivot,
+    shellGroup,
+    trigger: sgTrigger,
+    muzzlePoint,
+    rearSightRef,
+    frontSightRef,
+  };
+}
+
+/**
  * Creates the complete First-Person Weapon Viewmodel Rig attached to the camera,
- * including both redesigned weapons, component triangle breakdowns, and the articulated Left & Right Human Hands.
+ * including all three low-poly weapons (Assault Rifle, Revolver, Pump-Action Shotgun),
+ * component triangle breakdowns, and the articulated Left & Right Human Hands.
  */
 export function createWeaponRig(): WeaponRig {
   const root = new THREE.Group();
@@ -1230,15 +1726,20 @@ export function createWeaponRig(): WeaponRig {
 
   const ar = buildAssaultRifleMesh();
   const rev = buildRevolverMesh();
+  const sg = buildShotgunMesh();
 
   const arTriangleCount = countWeaponTriangles(ar.group);
   const revTriangleCount = countWeaponTriangles(rev.group);
+  const sgTriangleCount = countWeaponTriangles(sg.group);
   const arBreakdown = computeAssaultRifleBreakdown(ar.group);
   const revBreakdown = computeRevolverBreakdown(rev.group);
+  const sgBreakdown = computeShotgunBreakdown(sg.group);
 
   root.add(ar.group);
   root.add(rev.group);
+  root.add(sg.group);
   rev.group.visible = false;
+  sg.group.visible = false;
 
   // Mount First-Person Human Hands Hierarchy inside Viewmodel Root
   const handsRig = createFirstPersonHandsRig();
@@ -1265,6 +1766,7 @@ export function createWeaponRig(): WeaponRig {
     root,
     assaultRifleGroup: ar.group,
     revolverGroup: rev.group,
+    shotgunGroup: sg.group,
     arMagazine: ar.magazine,
     arChargingHandle: ar.chargingHandle,
     arTrigger: ar.trigger,
@@ -1277,13 +1779,21 @@ export function createWeaponRig(): WeaponRig {
     revMuzzlePoint: rev.muzzlePoint,
     revRearSightRef: rev.rearSightRef,
     revFrontSightRef: rev.frontSightRef,
+    sgForeEndPivot: sg.foreEndPivot,
+    sgShellGroup: sg.shellGroup,
+    sgTrigger: sg.trigger,
+    sgMuzzlePoint: sg.muzzlePoint,
+    sgRearSightRef: sg.rearSightRef,
+    sgFrontSightRef: sg.frontSightRef,
     muzzleFlashMesh,
     muzzleLight,
     handsRig,
     arTriangleCount,
     revTriangleCount,
+    sgTriangleCount,
     arBreakdown,
     revBreakdown,
+    sgBreakdown,
     leftHandTriangleCount: handsRig.leftHand.triangleCount,
     rightHandTriangleCount: handsRig.rightHand.triangleCount,
   };
@@ -1291,8 +1801,8 @@ export function createWeaponRig(): WeaponRig {
 
 /**
  * Applies the blended procedural viewmodel animations (idle, walk, sprint, mouse sway,
- * inertia, firing recoil, reload sub-part animation, weapon switch, calibrated mathematical ADS,
- * and 30-joint human hands) or Dedicated Weapon Inspection Views (Section 20.11) to the WeaponRig.
+ * inertia, firing recoil, reload sub-part animation, shotgun pump & shell insertion, weapon switch,
+ * calibrated mathematical ADS, and 30-joint human hands) or Dedicated Weapon Inspection Views to the WeaponRig.
  */
 export function applyWeaponRigTransform(
   rig: WeaponRig,
@@ -1303,18 +1813,29 @@ export function applyWeaponRigTransform(
   inspectionView: InspectionViewMode = 'off'
 ): void {
   const isAR = anim.activeWeapon === 'assault_rifle';
+  const isSG = anim.activeWeapon === 'shotgun';
+  const isRev = anim.activeWeapon === 'revolver';
+
   rig.assaultRifleGroup.visible = isAR;
-  rig.revolverGroup.visible = !isAR;
+  rig.revolverGroup.visible = isRev;
+  rig.shotgunGroup.visible = isSG;
 
   // Dedicated Weapon Inspection Mode (Section 20.11: side, front, top, rear, ads)
   if (inspectionView !== 'off') {
-    const sightY = isAR ? AR_SIGHT_AXIS_Y : REV_SIGHT_AXIS_Y;
+    const sightY = isAR
+      ? AR_SIGHT_AXIS_Y
+      : isSG
+      ? SG_SIGHT_AXIS_Y
+      : REV_SIGHT_AXIS_Y;
     rig.arMagazine.position.set(0, -0.042, -0.045);
     rig.arChargingHandle.position.set(0.026, 0.035, 0.005);
     rig.revCylinderPivot.position.set(0, 0.018, -0.004);
     rig.revCylinderPivot.rotation.set(0, 0, 0);
+    rig.sgForeEndPivot.position.set(0, -0.008, -0.255);
+    rig.sgShellGroup.visible = false;
     rig.arTrigger.rotation.set(0, 0, 0);
     rig.revTrigger.rotation.set(0, 0, 0);
+    rig.sgTrigger.rotation.set(0, 0, 0);
 
     if (inspectionView === 'ads') {
       rig.handsRig.root.visible = showHands;
@@ -1322,24 +1843,25 @@ export function applyWeaponRigTransform(
       anim.adsBlend = 1;
       updateFirstPersonHandsRig(rig.handsRig, anim, dt);
       anim.adsBlend = savedAds;
-      rig.root.position.set(0, -sightY, isAR ? -0.225 : -0.255);
+      rig.root.position.set(0, -sightY, isAR || isSG ? -0.225 : -0.255);
       rig.root.rotation.set(0, 0, 0);
       return;
     }
 
     // Hide hands during orthographic/angle geometry inspection so every sight and receiver edge is 100% unobstructed
     rig.handsRig.root.visible = false;
+    const isLongGun = isAR || isSG;
     if (inspectionView === 'side') {
-      rig.root.position.set(0, -0.01, isAR ? -0.52 : -0.42);
+      rig.root.position.set(0, -0.01, isLongGun ? -0.52 : -0.42);
       rig.root.rotation.set(0, Math.PI * 0.5, 0);
     } else if (inspectionView === 'front') {
-      rig.root.position.set(0, -0.015, isAR ? -0.68 : -0.46);
+      rig.root.position.set(0, -0.015, isLongGun ? -0.68 : -0.46);
       rig.root.rotation.set(0.04, Math.PI, 0);
     } else if (inspectionView === 'top') {
-      rig.root.position.set(0, -0.02, isAR ? -0.52 : -0.42);
+      rig.root.position.set(0, -0.02, isLongGun ? -0.52 : -0.42);
       rig.root.rotation.set(Math.PI * 0.5, 0, 0);
     } else if (inspectionView === 'rear') {
-      rig.root.position.set(0, -sightY, isAR ? -0.24 : -0.26);
+      rig.root.position.set(0, -sightY, isLongGun ? -0.24 : -0.26);
       rig.root.rotation.set(0, 0, 0);
     }
     return;
@@ -1347,21 +1869,23 @@ export function applyWeaponRigTransform(
 
   rig.handsRig.root.visible = showHands;
 
-  // Hip-fire resting position vs. mathematically calibrated ADS sight reference position (Section 20.4 & 20.8)
-  // At adsBlend = 1.0, (adsX = 0, adsY = -SIGHT_AXIS_Y, baseYaw = 0) places both the rear sight notch
-  // and front sight post tip directly onto the camera center ray (0, 0, -Z)!
-  const hipX = isAR ? 0.105 : 0.095;
-  const hipY = isAR ? -0.078 : -0.072;
-  const hipZ = isAR ? -0.33 : -0.315;
+  // Hip-fire resting position vs. mathematically calibrated ADS sight reference position
+  const hipX = isAR ? 0.105 : isSG ? 0.112 : 0.095;
+  const hipY = isAR ? -0.078 : isSG ? -0.084 : -0.072;
+  const hipZ = isAR ? -0.33 : isSG ? -0.345 : -0.315;
 
   const adsX = 0.0;
-  const adsY = isAR ? -AR_SIGHT_AXIS_Y : -REV_SIGHT_AXIS_Y;
-  const adsZ = isAR ? -0.225 : -0.255;
+  const adsY = isAR
+    ? -AR_SIGHT_AXIS_Y
+    : isSG
+    ? -SG_SIGHT_AXIS_Y
+    : -REV_SIGHT_AXIS_Y;
+  const adsZ = isAR ? -0.225 : isSG ? -0.235 : -0.255;
 
   const baseX = hipX + (adsX - hipX) * anim.adsBlend;
   const baseY = hipY + (adsY - hipY) * anim.adsBlend;
   const baseZ = hipZ + (adsZ - hipZ) * anim.adsBlend;
-  const baseYaw = (isAR ? 0.095 : 0.075) * (1 - anim.adsBlend);
+  const baseYaw = (isAR ? 0.095 : isSG ? 0.105 : 0.075) * (1 - anim.adsBlend);
 
   // 1. Idle subtle breathing (reduced by 78% in ADS so sight picture stays steady yet alive)
   const idleAmp = 1 - anim.adsBlend * 0.78;
@@ -1393,7 +1917,7 @@ export function applyWeaponRigTransform(
   const switchDropY = -0.32 * switchEase;
   const switchPitch = -0.65 * switchEase;
 
-  // 5. Reload procedural pose + mechanical sub-part motion
+  // 5. Reload procedural pose + mechanical sub-part motion (AR mag, Revolver cylinder, Shotgun shell insert & pump)
   let reloadDropY = 0;
   let reloadPitch = 0;
   let reloadRoll = 0;
@@ -1401,33 +1925,53 @@ export function applyWeaponRigTransform(
   if (anim.phase === 'reloading') {
     const p = anim.reloadProgress;
     const envelope = Math.sin(p * Math.PI); // 0 -> 1 -> 0
-    reloadDropY = -0.065 * envelope;
-    reloadPitch = 0.24 * envelope;
-    reloadRoll = (isAR ? 0.34 : -0.38) * envelope;
+    if (isSG) {
+      // Shotgun tilts slightly upward/right to expose the lower receiver loading port clearly
+      const shellPulse = Math.sin((anim.shellInsertProgress ?? 0) * Math.PI);
+      reloadDropY = -0.032 + shellPulse * 0.012;
+      reloadPitch = 0.22 + shellPulse * 0.06;
+      reloadRoll = 0.42 + shellPulse * 0.05;
 
-    if (isAR) {
-      // Magazine slides down out and back in; charging handle pulls back at end
-      const magPull =
-        p >= 0.25 && p < 0.72 ? Math.sin(((p - 0.25) / 0.47) * Math.PI) : 0;
-      rig.arMagazine.position.set(0, -0.042 - magPull * 0.15, -0.045);
-      const handlePull =
-        p >= 0.72 && p < 0.9 ? Math.sin(((p - 0.72) / 0.18) * Math.PI) : 0;
-      rig.arChargingHandle.position.set(
-        0.026,
-        0.035,
-        0.005 + handlePull * 0.055
+      // Show and animate the 12-gauge shell moving from the left hand into the lower receiver port
+      rig.sgShellGroup.visible = true;
+      rig.sgShellGroup.position.set(
+        -0.022 * (1 - shellPulse),
+        -0.058 + shellPulse * 0.046,
+        0.005 - shellPulse * 0.038
       );
+      rig.sgShellGroup.rotation.set(-0.35 * (1 - shellPulse), 0, 0);
+      rig.sgForeEndPivot.position.set(0, -0.008, -0.255);
     } else {
-      // Revolver cylinder swings out to the left and spins rapidly
-      const cylSwing = Math.sin(p * Math.PI);
-      rig.revCylinderPivot.position.set(
-        -cylSwing * 0.048,
-        0.018 - cylSwing * 0.01,
-        -0.004
-      );
-      rig.revCylinderPivot.rotation.z = p * Math.PI * 6;
+      rig.sgShellGroup.visible = false;
+      reloadDropY = -0.065 * envelope;
+      reloadPitch = 0.24 * envelope;
+      reloadRoll = (isAR ? 0.34 : -0.38) * envelope;
+
+      if (isAR) {
+        // Magazine slides down out and back in; charging handle pulls back at end
+        const magPull =
+          p >= 0.25 && p < 0.72 ? Math.sin(((p - 0.25) / 0.47) * Math.PI) : 0;
+        rig.arMagazine.position.set(0, -0.042 - magPull * 0.15, -0.045);
+        const handlePull =
+          p >= 0.72 && p < 0.9 ? Math.sin(((p - 0.72) / 0.18) * Math.PI) : 0;
+        rig.arChargingHandle.position.set(
+          0.026,
+          0.035,
+          0.005 + handlePull * 0.055
+        );
+      } else {
+        // Revolver cylinder swings out to the left and spins rapidly
+        const cylSwing = Math.sin(p * Math.PI);
+        rig.revCylinderPivot.position.set(
+          -cylSwing * 0.048,
+          0.018 - cylSwing * 0.01,
+          -0.004
+        );
+        rig.revCylinderPivot.rotation.z = p * Math.PI * 6;
+      }
     }
   } else {
+    rig.sgShellGroup.visible = false;
     rig.arMagazine.position.set(0, -0.042, -0.045);
     rig.arChargingHandle.position.set(
       0.026,
@@ -1436,11 +1980,21 @@ export function applyWeaponRigTransform(
     );
     rig.revCylinderPivot.position.set(0, 0.018, -0.004);
     rig.revCylinderPivot.rotation.z *= 0.85;
+
+    // Shotgun Pump-Action Presentation (`SG_PUMP_PRESENTATION`):
+    // Fore-end slides rearward (+Z) and forward (-Z) in sync with `anim.pumpProgress`
+    const pumpStroke = Math.sin((anim.pumpProgress ?? 0) * Math.PI);
+    rig.sgForeEndPivot.position.set(0, -0.008, -0.255 + pumpStroke * 0.072);
   }
+
+  // Subtle shotgun body reaction during pump stroke
+  const pumpBodyKickZ = isSG ? Math.sin((anim.pumpProgress ?? 0) * Math.PI) * 0.014 : 0;
+  const pumpBodyPitch = isSG ? Math.sin((anim.pumpProgress ?? 0) * Math.PI) * 0.045 : 0;
 
   // Weapon triggers physically articulate when pressed by the right index finger
   rig.arTrigger.rotation.x = -anim.triggerPress * 0.45;
   rig.revTrigger.rotation.x = -anim.triggerPress * 0.48;
+  rig.sgTrigger.rotation.x = -anim.triggerPress * 0.46;
 
   // Revolver hammer cocks back with recoil
   rig.revHammerPivot.rotation.x = -anim.recoilRotX * 3.2;
@@ -1450,28 +2004,103 @@ export function applyWeaponRigTransform(
     updateFirstPersonHandsRig(rig.handsRig, anim, dt);
   }
 
+  // 6. Tactical Slide canted weapon hold (Direction 03)
+  const slideX = -0.025 * anim.slideBlend;
+  const slideY = -0.022 * anim.slideBlend;
+  const slideZ = 0.015 * anim.slideBlend;
+  const slidePitch = 0.06 * anim.slideBlend;
+  const slideYaw = 0.14 * anim.slideBlend;
+  const slideRoll = -0.36 * anim.slideBlend;
+
+  // 7. 5-Stage First-Person Melee Strike (Preparation -> Anticipation -> Strike -> Contact -> Recovery) (Direction 04)
+  let meleeX = 0;
+  let meleeY = 0;
+  let meleeZ = 0;
+  let meleePitch = 0;
+  let meleeYaw = 0;
+  let meleeRoll = 0;
+
+  if (anim.phase === 'melee' || anim.meleeProgress > 0.001) {
+    const mp = anim.meleeProgress;
+    if (mp < 0.28) {
+      // Stages 1 & 2: Preparation & Anticipation windup
+      const w = mp / 0.28;
+      meleeX = 0.045 * w;
+      meleeY = 0.032 * w;
+      meleeZ = 0.075 * w;
+      meleePitch = 0.34 * w;
+      meleeYaw = -0.38 * w;
+      meleeRoll = -0.25 * w;
+    } else if (mp < 0.58) {
+      // Stages 3 & 4: Fast Forward Strike & Contact Frame
+      const s = Math.sin(((mp - 0.28) / 0.3) * Math.PI);
+      meleeX = -0.075 * s;
+      meleeY = 0.018 * s;
+      meleeZ = -0.185 * s;
+      meleePitch = -0.28 * s;
+      meleeYaw = 0.52 * s;
+      meleeRoll = 0.38 * s;
+    } else {
+      // Stage 5: Smooth Recovery
+      const r = 1 - (mp - 0.58) / 0.42;
+      meleeX = -0.02 * r;
+      meleeZ = -0.035 * r;
+      meleeYaw = 0.12 * r;
+    }
+  }
+
+  // 8. Single-Trigger Player Death lowering (Direction 05)
+  const deathDropY = -0.26 * anim.deathDropBlend;
+  const deathPitch = -0.58 * anim.deathDropBlend;
+  const deathRoll = 0.42 * anim.deathDropBlend;
+
   // Combine all additive positional & rotational channels smoothly
   rig.root.position.set(
-    baseX + breathX + walkX + sprintPushX + anim.swayPosX,
+    baseX +
+      breathX +
+      walkX +
+      sprintPushX +
+      slideX +
+      meleeX +
+      anim.damageReactX +
+      anim.swayPosX,
     baseY +
       breathY +
       walkY +
       sprintDropY +
       switchDropY +
       reloadDropY +
+      slideY +
+      meleeY +
+      deathDropY +
+      anim.damageReactY +
       anim.swayPosY +
       anim.recoilPosY,
-    baseZ + anim.recoilPosZ
+    baseZ + slideZ + meleeZ + pumpBodyKickZ + anim.recoilPosZ
   );
 
   rig.root.rotation.set(
-    sprintPitch + switchPitch + reloadPitch + anim.swayRotX + anim.recoilRotX,
-    baseYaw + sprintYaw + anim.swayRotY,
+    sprintPitch +
+      switchPitch +
+      reloadPitch +
+      slidePitch +
+      meleePitch +
+      deathPitch +
+      pumpBodyPitch +
+      anim.swayRotX +
+      anim.recoilRotX,
+    baseYaw + sprintYaw + slideYaw + meleeYaw + anim.swayRotY,
     breathRoll +
       walkRoll +
       sprintRoll +
       reloadRoll +
+      slideRoll +
+      meleeRoll +
+      deathRoll +
+      anim.damageReactRoll +
       anim.swayRotZ +
       anim.recoilRotZ
   );
 }
+
+
