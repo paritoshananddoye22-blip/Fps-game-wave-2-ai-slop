@@ -1,0 +1,6 @@
+{
+  "name": "LOW-POLY ARENA",
+  "description": "A precision low-poly first-person arena shooter with strict triangle-budget weapons, procedural viewmodel animation, and high-impact arcade gunplay.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
